@@ -31,7 +31,11 @@ export async function GET(request: NextRequest) {
   });
 
   const buf = await votersToXlsx(voters as any, "Filtrados");
-  return new NextResponse(buf, {
+  
+  // Convierte el Buffer a Uint8Array para compatibilidad con NextResponse
+  const uint8Array = new Uint8Array(buf);
+  
+  return new NextResponse(uint8Array, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${downloadName("votantes_filtrados", "xlsx")}"`
