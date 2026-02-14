@@ -12,6 +12,10 @@ type LeaderValues = {
   notas: string;
 };
 
+type FormState = {
+  error?: string;
+} | undefined;
+
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
   return (
@@ -33,10 +37,10 @@ export function LeaderForm({
 }: {
   title: string;
   initialValues: LeaderValues;
-  action: (prevState: { error?: string } | undefined, formData: FormData) => Promise<{ error?: string } | void>;
+  action: (prevState: FormState, formData: FormData) => Promise<FormState>;
   cancelHref: string;
 }) {
-  const [state, formAction] = useFormState(action as any, undefined);
+  const [state, formAction] = useFormState<FormState, FormData>(action, undefined);
 
   return (
     <div className="space-y-4">
