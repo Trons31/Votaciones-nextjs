@@ -29,7 +29,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
   if (isCsv) {
     const buf = Buffer.concat([Buffer.from("\ufeff", "utf-8"), votersToCsv(voters as any)]);
-    return new NextResponse(buf, {
+    // Convierte el Buffer a Uint8Array para compatibilidad con NextResponse
+    const uint8Array = new Uint8Array(buf);
+    
+    return new NextResponse(uint8Array, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${downloadName(`votantes_${safeName}`, "csv")}"`
@@ -38,7 +41,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 
   const buf = await votersToXlsx(voters as any, "Votantes");
-  return new NextResponse(buf, {
+  // Convierte el Buffer a Uint8Array para compatibilidad con NextResponse
+  const uint8Array = new Uint8Array(buf);
+  
+  return new NextResponse(uint8Array, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${downloadName(`votantes_${safeName}`, "xlsx")}"`
