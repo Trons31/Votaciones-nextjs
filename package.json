@@ -7,12 +7,12 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run prisma:deploy && next build",
     "start": "next start",
     "lint": "next lint",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:deploy": "prisma migrate deploy",
+    "prisma:deploy": "npx prisma migrate deploy && prisma generate",
     "prisma:studio": "prisma studio",
     "db:seed": "prisma db seed"
   },
