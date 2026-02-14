@@ -1,0 +1,23 @@
+import { requireAuth } from "@/lib/require-auth";
+import { LeaderForm } from "@/components/LeaderForm";
+import { createLeaderAction } from "@/app/actions/leaders";
+
+export default async function NewLeaderPage() {
+  await requireAuth();
+
+  return (
+    <LeaderForm
+      title="Nuevo líder"
+      initialValues={{
+        nombresLider: "",
+        apellidosLider: "",
+        cedulaLider: "",
+        telefono: "",
+        zonaBarrio: "",
+        notas: ""
+      }}
+      action={createLeaderAction}
+      cancelHref="/leaders"
+    />
+  );
+}
