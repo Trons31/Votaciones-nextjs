@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       by: ["dondeVota"],
       where: { dondeVota: { not: null }, NOT: { dondeVota: "" } },
       _count: { _all: true },
-      orderBy: { _count: { _all: "desc" } }
+      orderBy: { _count: { id: "desc" } }
     }),
     prisma.voter.groupBy({
       by: ["dondeVota", "mesaVotacion"],
@@ -61,10 +61,10 @@ export async function GET(request: NextRequest) {
     if (g.leaderId) countMap.set(g.leaderId, g._count._all);
   }
 
-  const porLider: Array<[string, number]> = [
-    ["Independientes (sin líder)", totalIndependientes],
-    ...leaders.map((l) => [`${l.nombresLider} ${l.apellidosLider}`, countMap.get(l.id) ?? 0])
-  ];
+const porLider: Array<[string, number]> = [
+  ["Independientes (sin líder)", totalIndependientes],
+  ...leaders.map((l) => [`${l.nombresLider} ${l.apellidosLider}`, countMap.get(l.id) ?? 0] as [string, number])
+];
 
   const porColegio: Array<[string, number]> = porColegioGrouped.map((r) => [r.dondeVota || "(Sin colegio)", r._count._all]);
 
