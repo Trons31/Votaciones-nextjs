@@ -62,11 +62,12 @@ export async function GET(request: NextRequest) {
   }
 
   const porLider: Array<[string, number]> = [
-  ["Independientes (sin líder)", totalIndependientes],
-  ...leaders.map(
-    (l): [string, number] => [`${l.nombresLider} ${l.apellidosLider}`, countMap.get(l.id) ?? 0]
-  )
-];
+    ["Independientes (sin líder)", totalIndependientes],
+    ...leaders.map(
+      (l): [string, number] => [`${l.nombresLider} ${l.apellidosLider}`, countMap.get(l.id) ?? 0]
+    )
+  ];
+  
   const porColegio: Array<[string, number]> = porColegioGrouped.map((r) => [r.dondeVota || "(Sin colegio)", r._count._all]);
 
   const porMesa: Array<[string, string, number]> = porMesaGrouped.map((r) => [r.dondeVota!, r.mesaVotacion!, r._count._all]);
@@ -83,8 +84,11 @@ export async function GET(request: NextRequest) {
   };
 
   const buf = await reportToXlsx({ resumen, porLider, porColegio, porMesa });
+  
+  // Convierte el Buffer a Uint8Array para compatibilidad con NextResponse
+  const uint8Array = new Uint8Array(buf);
 
-  return new NextResponse(buf, {
+  return new NextResponse(uint8Array, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${downloadName("reporte", "xlsx")}"`
