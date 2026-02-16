@@ -1,3 +1,4 @@
+"use server";
 // lib/auth.ts - Actualización para incluir el rol
 
 import { cookies } from "next/headers";
