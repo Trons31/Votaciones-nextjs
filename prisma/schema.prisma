@@ -7,10 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  ADMIN         // Administrador con acceso completo
+  COLABORADOR   // Colaborador con permisos limitados
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   username     String   @unique
   passwordHash String
+  rol          UserRole @default(COLABORADOR) // Rol del usuario
   createdAt    DateTime @default(now()) @db.Timestamptz(3)
 
   leaderCheckIns LeaderCheckIn[]

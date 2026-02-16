@@ -4,15 +4,22 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logoutAction } from "@/app/actions/auth";
 import { useState } from "react";
+import { UserRole } from "@prisma/client";
 
-export function Navbar({ user }: { user: { id: number; username: string } | null }) {
+export function Navbar({ 
+  user 
+}: { 
+  user: { id: number; username: string; rol: UserRole } | null 
+}) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const navLinks = [
+  // Definir todos los links con sus permisos
+  const allNavLinks = [
     {
       href: "/leaders",
       label: "Líderes",
+      roles: [UserRole.ADMIN, UserRole.COLABORADOR], // Ambos pueden ver
       icon: (
         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -22,6 +29,7 @@ export function Navbar({ user }: { user: { id: number; username: string } | null
     {
       href: "/voters",
       label: "Votantes",
+      roles: [UserRole.ADMIN, UserRole.COLABORADOR], // Ambos pueden ver
       icon: (
         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -31,6 +39,7 @@ export function Navbar({ user }: { user: { id: number; username: string } | null
     {
       href: "/filtros",
       label: "Filtros",
+      roles: [UserRole.ADMIN, UserRole.COLABORADOR], // Ambos pueden ver
       icon: (
         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -40,6 +49,7 @@ export function Navbar({ user }: { user: { id: number; username: string } | null
     {
       href: "/reporte",
       label: "Reporte",
+      roles: [UserRole.ADMIN], // Solo ADMIN
       icon: (
         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -49,6 +59,7 @@ export function Navbar({ user }: { user: { id: number; username: string } | null
     {
       href: "/export",
       label: "Exportación",
+      roles: [UserRole.ADMIN], // Solo ADMIN
       icon: (
         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
@@ -57,11 +68,28 @@ export function Navbar({ user }: { user: { id: number; username: string } | null
     }
   ];
 
+  // Filtrar links según el rol del usuario
+  const navLinks = user 
+    ? allNavLinks.filter(link => link.roles.includes(user.rol))
+    : [];
+
   const isActive = (href: string) => {
     if (href === "/voters") {
       return pathname === "/voters" || pathname === "/" || pathname === "/voters/new";
     }
     return pathname.startsWith(href);
+  };
+
+  // Función para obtener el nombre del rol
+  const getRoleName = (rol: UserRole) => {
+    return rol === UserRole.ADMIN ? "Administrador" : "Colaborador";
+  };
+
+  // Función para obtener el color del badge según el rol
+  const getRoleBadgeColor = (rol: UserRole) => {
+    return rol === UserRole.ADMIN 
+      ? "bg-purple-100 text-purple-700" 
+      : "bg-blue-100 text-blue-700";
   };
 
   return (
@@ -107,7 +135,12 @@ export function Navbar({ user }: { user: { id: number; username: string } | null
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600 text-xs font-bold text-white">
                 {user.username.charAt(0).toUpperCase()}
               </div>
-              <span className="text-sm font-medium text-slate-900">{user.username}</span>
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-slate-900">{user.username}</span>
+                <span className={`text-xs font-semibold ${getRoleBadgeColor(user.rol)} rounded px-1.5 py-0.5`}>
+                  {getRoleName(user.rol)}
+                </span>
+              </div>
             </div>
 
             {/* Logout Button Desktop */}
@@ -154,7 +187,9 @@ export function Navbar({ user }: { user: { id: number; username: string } | null
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-900">{user.username}</p>
-                <p className="text-xs text-slate-600">Usuario activo</p>
+                <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${getRoleBadgeColor(user.rol)}`}>
+                  {getRoleName(user.rol)}
+                </span>
               </div>
             </div>
 

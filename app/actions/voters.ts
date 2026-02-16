@@ -119,7 +119,10 @@ export async function updateVoterAction(voterId: number, prevState: { error?: st
 export async function deleteVoterAction(voterId: number) {
   await requireAuth();
   await prisma.voter.delete({ where: { id: voterId } });
-  backToRefererOr(`/voters?flash=${encodeURIComponent("Votante eliminado.")}&tone=info`);
+  
+  // Redirigir directamente a /voters en lugar de usar backToRefererOr
+  // porque el referer (/voters/{id}/edit) ya no existe después de eliminar
+  redirect(`/voters?flash=${encodeURIComponent("Votante eliminado.")}&tone=success`);
 }
 
 export async function toggleVoterCheckInAction(voterId: number) {

@@ -1,32 +1,63 @@
-"use server";
+// lib/auth.ts - Actualización para incluir el rol
 
-import bcrypt from "bcryptjs";
+import { cookies } from "next/headers";
+import { getIronSession } from "iron-session";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { clearSession, setSession } from "@/lib/auth";
-import { ensureInitAdmin } from "@/lib/init-admin";
 
-export async function loginAction(prevState: { error?: string } | undefined, formData: FormData) {
-  await ensureInitAdmin();
+// Tus opciones de sesión existentes
+export const sessionOptions = {
+  password: process.env.SESSION_SECRET!,
+  cookieName: "session",
+  cookieOptions: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+  },
+};
 
-  const username = String(formData.get("username") || "").trim();
-  const password = String(formData.get("password") || "");
+// ============================================
+// ACTUALIZAR getSessionUser para incluir ROL
+// ============================================
+export async function getSessionUser() {
+  const session = await getIronSession<{ userId: number }>(
+    cookies(),
+    sessionOptions
+  );
 
-  if (!username || !password) {
-    return { error: "Usuario y clave son obligatorios." };
-  }
+  if (!session.userId) return null;
 
-  const user = await prisma.user.findUnique({ where: { username } });
-  if (!user) return { error: "Usuario o clave inválidos." };
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { 
+      id: true, 
+      username: true,
+      rol: true // ← AGREGAR ESTO
+    }
+  });
 
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return { error: "Usuario o clave inválidos." };
-
-  await setSession(user.id);
-  redirect("/voters");
+  return user;
 }
 
+// ============================================
+// setSession y clearSession (sin cambios)
+// ============================================
+export async function setSession(userId: number) {
+  const session = await getIronSession<{ userId: number }>(
+    cookies(),
+    sessionOptions
+  );
+  session.userId = userId;
+  await session.save();
+}
+
+export async function clearSession() {
+  const session = await getIronSession<{ userId: number }>(
+    cookies(),
+    sessionOptions
+  );
+  session.destroy();
+}
 export async function logoutAction() {
-  clearSession();
+  await clearSession();
   redirect("/login");
 }
