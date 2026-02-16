@@ -1,82 +1,32 @@
 "use server";
 
-import { cookies } from "next/headers";
-import { getIronSession } from "iron-session";
+import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { UserRole } from "@prisma/client";
+import { clearSession, setSession } from "@/lib/auth";
+import { ensureInitAdmin } from "@/lib/init-admin";
 
-// ============================================
-// TIPO DE DATOS DE LA SESIÓN
-// ============================================
-interface SessionData {
-  userId: number;
-  username: string;
-  rol: UserRole;
+export async function loginAction(prevState: { error?: string } | undefined, formData: FormData) {
+  await ensureInitAdmin();
+
+  const username = String(formData.get("username") || "").trim();
+  const password = String(formData.get("password") || "");
+
+  if (!username || !password) {
+    return { error: "Usuario y clave son obligatorios." };
+  }
+
+  const user = await prisma.user.findUnique({ where: { username } });
+  if (!user) return { error: "Usuario o clave inválidos." };
+
+  const ok = await bcrypt.compare(password, user.passwordHash);
+  if (!ok) return { error: "Usuario o clave inválidos." };
+
+  await setSession(user.id);
+  redirect("/voters");
 }
 
-// ============================================
-// OPCIONES DE SESIÓN
-// ============================================
-export const sessionOptions = {
-  password: process.env.SESSION_SECRET!,
-  cookieName: "session",
-  cookieOptions: {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-  },
-};
-
-// ============================================
-// GET SESSION USER - Devuelve datos de la sesión
-// ============================================
-export async function getSessionUser() {
-  const session = await getIronSession<SessionData>(
-    cookies(),
-    sessionOptions
-  );
-
-  if (!session.userId) return null;
-
-  // Devolver los datos almacenados en la sesión
-  return {
-    id: session.userId,
-    username: session.username,
-    rol: session.rol
-  };
-}
-
-// ============================================
-// SET SESSION - Guarda id, username y rol
-// ============================================
-export async function setSession(userId: number, username: string, rol: UserRole) {
-  const session = await getIronSession<SessionData>(
-    cookies(),
-    sessionOptions
-  );
-  
-  session.userId = userId;
-  session.username = username;
-  session.rol = rol;
-  
-  await session.save();
-}
-
-// ============================================
-// CLEAR SESSION - Limpia la sesión
-// ============================================
-export async function clearSession() {
-  const session = await getIronSession<SessionData>(
-    cookies(),
-    sessionOptions
-  );
-  session.destroy();
-}
-
-// ============================================
-// LOGOUT ACTION - Cierra sesión y redirige
-// ============================================
 export async function logoutAction() {
-  await clearSession();
+  clearSession();
   redirect("/login");
 }
