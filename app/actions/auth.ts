@@ -1,12 +1,23 @@
 "use server";
-// lib/auth.ts - Actualización para incluir el rol
 
 import { cookies } from "next/headers";
 import { getIronSession } from "iron-session";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { UserRole } from "@prisma/client";
 
-// Tus opciones de sesión existentes
+// ============================================
+// TIPO DE DATOS DE LA SESIÓN
+// ============================================
+interface SessionData {
+  userId: number;
+  username: string;
+  rol: UserRole;
+}
+
+// ============================================
+// OPCIONES DE SESIÓN
+// ============================================
 export const sessionOptions = {
   password: process.env.SESSION_SECRET!,
   cookieName: "session",
@@ -17,47 +28,54 @@ export const sessionOptions = {
 };
 
 // ============================================
-// ACTUALIZAR getSessionUser para incluir ROL
+// GET SESSION USER - Devuelve datos de la sesión
 // ============================================
 export async function getSessionUser() {
-  const session = await getIronSession<{ userId: number }>(
+  const session = await getIronSession<SessionData>(
     cookies(),
     sessionOptions
   );
 
   if (!session.userId) return null;
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: { 
-      id: true, 
-      username: true,
-      rol: true // ← AGREGAR ESTO
-    }
-  });
-
-  return user;
+  // Devolver los datos almacenados en la sesión
+  return {
+    id: session.userId,
+    username: session.username,
+    rol: session.rol
+  };
 }
 
 // ============================================
-// setSession y clearSession (sin cambios)
+// SET SESSION - Guarda id, username y rol
 // ============================================
-export async function setSession(userId: number) {
-  const session = await getIronSession<{ userId: number }>(
+export async function setSession(userId: number, username: string, rol: UserRole) {
+  const session = await getIronSession<SessionData>(
     cookies(),
     sessionOptions
   );
+  
   session.userId = userId;
+  session.username = username;
+  session.rol = rol;
+  
   await session.save();
 }
 
+// ============================================
+// CLEAR SESSION - Limpia la sesión
+// ============================================
 export async function clearSession() {
-  const session = await getIronSession<{ userId: number }>(
+  const session = await getIronSession<SessionData>(
     cookies(),
     sessionOptions
   );
   session.destroy();
 }
+
+// ============================================
+// LOGOUT ACTION - Cierra sesión y redirige
+// ============================================
 export async function logoutAction() {
   await clearSession();
   redirect("/login");
