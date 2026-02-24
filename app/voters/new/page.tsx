@@ -9,8 +9,7 @@ export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
 export default async function NewVoterPage() {
-  noStore(); // ✅ evita cache por completo en esta request
-
+  noStore();
   const user = await requireAuth();
 
   const leaders = await prisma.leader.findMany({
@@ -21,14 +20,7 @@ export default async function NewVoterPage() {
   return (
     <VoterForm
       title="Nuevo votante"
-      initialValues={{
-        cedulaVotante: "",
-        nombres: "",
-        apellidos: "",
-        dondeVota: "",
-        mesaVotacion: "",
-        leaderId: "none"
-      }}
+      initialValues={{ cedulaVotante: "", nombres: "", apellidos: "", dondeVota: "", mesaVotacion: "", leaderId: "none" }}
       leaders={leaders}
       action={createVoterAction}
       cancelHref="/voters"

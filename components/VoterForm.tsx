@@ -55,6 +55,10 @@ export function VoterForm({
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">{title}</h1>
 
+          <div className="text-xs text-red-500">
+      DEBUG VOTER canChooseOrigen: {String(canChooseOrigen)}
+    </div>
+
       <form action={formAction} className="rounded-lg border bg-white p-4 shadow-sm">
         {state?.error ? (
           <div className="mb-3 rounded-md bg-red-50 p-2 text-sm text-red-700">{state.error}</div>
