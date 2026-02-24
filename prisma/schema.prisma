@@ -1,121 +1,121 @@
-generator client {
-  provider = "prisma-client-js"
-}
+  generator client {
+    provider = "prisma-client-js"
+  }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+  datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+  }
 
-enum UserRole {
-  ADMIN         // Administrador con acceso completo
-  COLABORADOR   // Colaborador con permisos limitados
-}
+  enum UserRole {
+    ADMIN         // Administrador con acceso completo
+    COLABORADOR   // Colaborador con permisos limitados
+  }
 
-model User {
-  id           Int      @id @default(autoincrement())
-  username     String   @unique
-  passwordHash String
-  rol          UserRole @default(COLABORADOR) // Rol del usuario
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  model User {
+    id           Int      @id @default(autoincrement())
+    username     String   @unique
+    passwordHash String
+    rol          UserRole @default(COLABORADOR) // Rol del usuario
+    createdAt    DateTime @default(now()) @db.Timestamptz(3)
 
-  leaderCheckIns LeaderCheckIn[]
-  voterCheckIns  VoterCheckIn[]
-}
+    leaderCheckIns LeaderCheckIn[]
+    voterCheckIns  VoterCheckIn[]
+  }
 
-model Leader {
-  id           Int      @id @default(autoincrement())
-  nombresLider  String
-  apellidosLider String
-  cedulaLider   String?  @unique
-  telefono      String?
-  zonaBarrio    String?
-  notas         String?
-  fechaRegistro DateTime @default(now()) @db.Timestamptz(3)
+  model Leader {
+    id           Int      @id @default(autoincrement())
+    nombresLider  String
+    apellidosLider String
+    cedulaLider   String?  @unique
+    telefono      String?
+    zonaBarrio    String?
+    notas         String?
+    fechaRegistro DateTime @default(now()) @db.Timestamptz(3)
 
-  checkedIn     Boolean  @default(false)
-  checkedInAt   DateTime? @db.Timestamptz(3)
+    checkedIn     Boolean  @default(false)
+    checkedInAt   DateTime? @db.Timestamptz(3)
 
-  // 'precargado' | 'nuevo'
-  origen        String?
+    // 'precargado' | 'nuevo'
+    origen        String?
 
-  // Campos normalizados (sin tildes, lowercase) para búsquedas tipo Flask
-  nombresNorm   String
-  apellidosNorm String
-  cedulaNorm    String?
-  telefonoNorm  String?
-  zonaBarrioNorm String?
+    // Campos normalizados (sin tildes, lowercase) para búsquedas tipo Flask
+    nombresNorm   String
+    apellidosNorm String
+    cedulaNorm    String?
+    telefonoNorm  String?
+    zonaBarrioNorm String?
 
-  voters        Voter[]
-  checkIns      LeaderCheckIn[]
+    voters        Voter[]
+    checkIns      LeaderCheckIn[]
 
-  @@index([checkedIn])
-}
+    @@index([checkedIn])
+  }
 
-model Voter {
-  id            Int      @id @default(autoincrement())
-  cedulaVotante String   @unique
-  nombres       String
-  apellidos     String
+  model Voter {
+    id            Int      @id @default(autoincrement())
+    cedulaVotante String   @unique
+    nombres       String
+    apellidos     String
 
-  // En Flask se llama donde_vota (UI: colegio)
-  dondeVota     String?
-  mesaVotacion  String?
+    // En Flask se llama donde_vota (UI: colegio)
+    dondeVota     String?
+    mesaVotacion  String?
 
-  leaderId      Int?
-  leader        Leader?  @relation(fields: [leaderId], references: [id], onDelete: SetNull)
+    leaderId      Int?
+    leader        Leader?  @relation(fields: [leaderId], references: [id], onDelete: SetNull)
 
-  // MVP simplificado: solo "Votó"
-  estado        String   @default("Votó")
+    // MVP simplificado: solo "Votó"
+    estado        String   @default("Votó")
 
-  fechaRegistro DateTime @default(now()) @db.Timestamptz(3)
+    fechaRegistro DateTime @default(now()) @db.Timestamptz(3)
 
-  checkedIn     Boolean  @default(false)
-  checkedInAt   DateTime? @db.Timestamptz(3)
+    checkedIn     Boolean  @default(false)
+    checkedInAt   DateTime? @db.Timestamptz(3)
 
-  // 'precargado' | 'nuevo'
-  origen        String?
+    // 'precargado' | 'nuevo'
+    origen        String?
 
-  // Campos normalizados para búsquedas
-  cedulaNorm    String
-  nombresNorm   String
-  apellidosNorm String
-  dondeVotaNorm String?
-  mesaVotacionNorm String?
+    // Campos normalizados para búsquedas
+    cedulaNorm    String
+    nombresNorm   String
+    apellidosNorm String
+    dondeVotaNorm String?
+    mesaVotacionNorm String?
 
-  checkIns      VoterCheckIn[]
+    checkIns      VoterCheckIn[]
 
-  @@index([leaderId])
-  @@index([dondeVota])
-  @@index([mesaVotacion])
-  @@index([checkedIn])
-}
+    @@index([leaderId])
+    @@index([dondeVota])
+    @@index([mesaVotacion])
+    @@index([checkedIn])
+  }
 
-model LeaderCheckIn {
-  id           Int      @id @default(autoincrement())
-  leaderId     Int
-  leader       Leader   @relation(fields: [leaderId], references: [id], onDelete: Cascade)
+  model LeaderCheckIn {
+    id           Int      @id @default(autoincrement())
+    leaderId     Int
+    leader       Leader   @relation(fields: [leaderId], references: [id], onDelete: Cascade)
 
-  checkedInAt  DateTime @default(now()) @db.Timestamptz(3)
-  checkedOutAt DateTime? @db.Timestamptz(3)
+    checkedInAt  DateTime @default(now()) @db.Timestamptz(3)
+    checkedOutAt DateTime? @db.Timestamptz(3)
 
-  // opcional: quién hizo el check (admin)
-  userId       Int?
-  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+    // opcional: quién hizo el check (admin)
+    userId       Int?
+    user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  @@index([leaderId, checkedInAt])
-}
+    @@index([leaderId, checkedInAt])
+  }
 
-model VoterCheckIn {
-  id           Int      @id @default(autoincrement())
-  voterId      Int
-  voter        Voter    @relation(fields: [voterId], references: [id], onDelete: Cascade)
+  model VoterCheckIn {
+    id           Int      @id @default(autoincrement())
+    voterId      Int
+    voter        Voter    @relation(fields: [voterId], references: [id], onDelete: Cascade)
 
-  checkedInAt  DateTime @default(now()) @db.Timestamptz(3)
-  checkedOutAt DateTime? @db.Timestamptz(3)
+    checkedInAt  DateTime @default(now()) @db.Timestamptz(3)
+    checkedOutAt DateTime? @db.Timestamptz(3)
 
-  userId       Int?
-  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+    userId       Int?
+    user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  @@index([voterId, checkedInAt])
-}
+    @@index([voterId, checkedInAt])
+  }
