@@ -13,49 +13,56 @@ export default async function ReportePage({
 
   const generatedAt = new Date();
 
-  const [
-    totalVoters,
-    totalLeaders,
-    totalIndependientes,
-    precargados,
-    nuevos,
-    votersConfirmados,
-    leadersConfirmados,
-    porColegio,
-    porMesa,
-    leaders,
-    groupedByLeader
-  ] = await Promise.all([
-    prisma.voter.count(),
-    prisma.leader.count(),
-    prisma.voter.count({ where: { leaderId: null } }),
-    prisma.voter.count({ where: { origen: "precargado" } }),
-    prisma.voter.count({ where: { origen: "nuevo" } }),
-    prisma.voter.count({ where: { checkedIn: true } }),
-    prisma.leader.count({ where: { checkedIn: true } }),
-    prisma.voter.groupBy({
-      by: ["dondeVota"],
-      where: { dondeVota: { not: null }, NOT: { dondeVota: "" } },
-      _count: { _all: true },
-      orderBy: { _count: { id: "desc" } }
-    }),
-    prisma.voter.groupBy({
-      by: ["dondeVota", "mesaVotacion"],
-      where: {
-        dondeVota: { not: null },
-        mesaVotacion: { not: null },
-        NOT: [{ dondeVota: "" }, { mesaVotacion: "" }]
-      },
-      _count: { _all: true },
-      orderBy: [{ dondeVota: "asc" }, { mesaVotacion: "asc" }]
-    }),
-    prisma.leader.findMany({ orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }], select: { id: true, nombresLider: true, apellidosLider: true } }),
-    prisma.voter.groupBy({
-      by: ["leaderId"],
-      where: { leaderId: { not: null } },
-      _count: { _all: true }
-    })
-  ]);
+ const [
+  totalVoters,
+  totalLeaders,
+  totalIndependientes,
+  votersPrecargados,
+  votersNuevos,
+  leadersPrecargados,
+  leadersNuevos,
+  votersConfirmados,
+  leadersConfirmados,
+  porColegio,
+  porMesa,
+  leaders,
+  groupedByLeader
+] = await Promise.all([
+  prisma.voter.count(),
+  prisma.leader.count(),
+  prisma.voter.count({ where: { leaderId: null } }),
+  prisma.voter.count({ where: { origen: "precargado" } }),
+  prisma.voter.count({ where: { origen: "nuevo" } }),
+  prisma.leader.count({ where: { origen: "precargado" } }),
+  prisma.leader.count({ where: { origen: "nuevo" } }),
+  prisma.voter.count({ where: { checkedIn: true } }),
+  prisma.leader.count({ where: { checkedIn: true } }),
+  prisma.voter.groupBy({
+    by: ["dondeVota"],
+    where: { dondeVota: { not: null }, NOT: { dondeVota: "" } },
+    _count: { _all: true },
+    orderBy: { _count: { id: "desc" } }
+  }),
+  prisma.voter.groupBy({
+    by: ["dondeVota", "mesaVotacion"],
+    where: {
+      dondeVota: { not: null },
+      mesaVotacion: { not: null },
+      NOT: [{ dondeVota: "" }, { mesaVotacion: "" }]
+    },
+    _count: { _all: true },
+    orderBy: [{ _count: { id: "desc" } }, { dondeVota: "asc" }, { mesaVotacion: "asc" }]
+  }),
+  prisma.leader.findMany({
+    orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }],
+    select: { id: true, nombresLider: true, apellidosLider: true }
+  }),
+  prisma.voter.groupBy({
+    by: ["leaderId"],
+    where: { leaderId: { not: null } },
+    _count: { _all: true }
+  })
+]);
 
   const countMap = new Map<number, number>();
   for (const g of groupedByLeader) {
@@ -63,12 +70,14 @@ export default async function ReportePage({
   }
 
   const porLiderRows: Array<{ lider: string; count: number; isIndependiente?: boolean }> = [
-    { lider: "Independientes (sin líder)", count: totalIndependientes, isIndependiente: true },
-    ...leaders.map((l) => ({
-      lider: `${l.nombresLider} ${l.apellidosLider}`,
-      count: countMap.get(l.id) ?? 0
-    }))
-  ].filter(r => r.count > 0);
+  { lider: "Independientes (sin líder)", count: totalIndependientes, isIndependiente: true },
+  ...leaders.map((l) => ({
+    lider: `${l.nombresLider} ${l.apellidosLider}`,
+    count: countMap.get(l.id) ?? 0
+  }))
+]
+  .filter((r) => r.count > 0)
+  .sort((a, b) => b.count - a.count);
 
   const flash = searchParams.flash ? decodeURIComponent(searchParams.flash) : "";
   const tone =
@@ -142,10 +151,10 @@ export default async function ReportePage({
             </div>
             <div className="mt-3 flex items-center gap-2 text-xs text-blue-100">
               <span className="rounded-full bg-white/20 px-2 py-0.5">
-                {precargados} precargados
+               {votersPrecargados} precargados
               </span>
               <span className="rounded-full bg-white/20 px-2 py-0.5">
-                {nuevos} nuevos
+                {votersNuevos} nuevos
               </span>
             </div>
           </div>
@@ -163,9 +172,14 @@ export default async function ReportePage({
                 </svg>
               </div>
             </div>
-            <div className="mt-3 text-xs text-purple-100">
-              {totalIndependientes.toLocaleString()} independientes ({porcentajeIndependientes}%)
-            </div>
+                <div className="mt-3 flex items-center gap-2 text-xs text-purple-100">
+        <span className="rounded-full bg-white/20 px-2 py-0.5">
+          {leadersPrecargados} precargados
+        </span>
+        <span className="rounded-full bg-white/20 px-2 py-0.5">
+          {leadersNuevos} nuevos
+        </span>
+      </div>
           </div>
 
           {/* Votantes Confirmados */}

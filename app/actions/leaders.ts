@@ -16,6 +16,22 @@ const LeaderSchema = z.object({
   notas: z.string().trim().optional().or(z.literal(""))
 });
 
+function resolveOrigen(
+  userRole: string,
+  origenRaw: string
+):
+  | { ok: true; origen: "nuevo" | "precargado" }
+  | { ok: false; error: string } {
+  // Colaborador SIEMPRE queda como "nuevo"
+  if (userRole !== "ADMIN") return { ok: true, origen: "nuevo" };
+
+  const v = (origenRaw || "").trim();
+  if (v === "" || v === "nuevo") return { ok: true, origen: "nuevo" };
+  if (v === "precargado") return { ok: true, origen: "precargado" };
+
+  return { ok: false, error: "Origen inválido." };
+}
+
 function backToRefererOr(path: string) {
   const ref = headers().get("referer");
   if (ref) redirect(ref);
@@ -26,7 +42,7 @@ export async function createLeaderAction(
   prevState: { error?: string } | undefined,
   formData: FormData
 ) {
-  await requireAuth();
+  const user = await requireAuth();
 
   const raw = {
     nombresLider: String(formData.get("nombresLider") ?? ""),
@@ -40,13 +56,19 @@ export async function createLeaderAction(
   const parsed = LeaderSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.errors[0]?.message || "Datos inválidos" };
 
+  const origenResolved = resolveOrigen(user.rol, String(formData.get("origen") ?? ""));
+  if (!origenResolved.ok) return { error: origenResolved.error };
+
   const ced = parsed.data.cedulaLider?.trim() || null;
   if (ced) {
-    const existing = await prisma.leader.findFirst({ where: { cedulaLider: ced }, select: { id: true } });
+    const existing = await prisma.leader.findFirst({
+      where: { cedulaLider: ced },
+      select: { id: true }
+    });
     if (existing) return { error: "Ya existe un líder con esa cédula." };
   }
 
-  const leader = await prisma.leader.create({
+  await prisma.leader.create({
     data: {
       nombresLider: parsed.data.nombresLider.trim(),
       apellidosLider: parsed.data.apellidosLider.trim(),
@@ -54,7 +76,7 @@ export async function createLeaderAction(
       telefono: parsed.data.telefono?.trim() || null,
       zonaBarrio: parsed.data.zonaBarrio?.trim() || null,
       notas: parsed.data.notas?.trim() || null,
-      origen: "nuevo",
+      origen: origenResolved.origen,
       nombresNorm: normalizeText(parsed.data.nombresLider),
       apellidosNorm: normalizeText(parsed.data.apellidosLider),
       cedulaNorm: ced ? normalizeText(ced) : null,

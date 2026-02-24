@@ -3,7 +3,7 @@ import { LeaderForm } from "@/components/LeaderForm";
 import { createLeaderAction } from "@/app/actions/leaders";
 
 export default async function NewLeaderPage() {
-  await requireAuth();
+  const user = await requireAuth();
 
   return (
     <LeaderForm
@@ -18,6 +18,7 @@ export default async function NewLeaderPage() {
       }}
       action={createLeaderAction}
       cancelHref="/leaders"
+      canChooseOrigen={user.rol === "ADMIN"}
     />
   );
 }

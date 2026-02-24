@@ -22,8 +22,26 @@ function backToRefererOr(path: string) {
   redirect(path);
 }
 
-export async function createVoterAction(prevState: { error?: string } | undefined, formData: FormData) {
-  await requireAuth();
+function resolveOrigen(
+  userRole: string,
+  origenRaw: string
+):
+  | { ok: true; origen: "nuevo" | "precargado" }
+  | { ok: false; error: string } {
+  // Colaboradores siempre registran como "nuevo".
+  if (userRole !== "ADMIN") return { ok: true, origen: "nuevo" };
+
+  const v = (origenRaw || "").trim();
+  if (v === "" || v === "nuevo") return { ok: true, origen: "nuevo" };
+  if (v === "precargado") return { ok: true, origen: "precargado" };
+  return { ok: false, error: "Origen inválido." };
+}
+
+export async function createVoterAction(
+  prevState: { error?: string } | undefined,
+  formData: FormData
+) {
+  const user = await requireAuth();
 
   const raw = {
     cedulaVotante: String(formData.get("cedulaVotante") ?? ""),
@@ -37,15 +55,23 @@ export async function createVoterAction(prevState: { error?: string } | undefine
   const parsed = VoterSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.errors[0]?.message || "Datos inválidos" };
 
+  // ✅ AQUÍ VA: justo después del parsed y antes del create
+  const origenResolved = resolveOrigen(user.rol, String(formData.get("origen") ?? ""));
+  if (!origenResolved.ok) return { error: origenResolved.error };
+
   const ced = parsed.data.cedulaVotante.trim();
-  const existing = await prisma.voter.findFirst({ where: { cedulaVotante: ced }, select: { id: true } });
+  const existing = await prisma.voter.findFirst({
+    where: { cedulaVotante: ced },
+    select: { id: true }
+  });
   if (existing) return { error: "Ya existe un votante con esa cédula." };
 
-  const leaderId = parsed.data.leaderId && parsed.data.leaderId !== "none" && parsed.data.leaderId !== ""
-    ? Number(parsed.data.leaderId)
-    : null;
+  const leaderId =
+    parsed.data.leaderId && parsed.data.leaderId !== "none" && parsed.data.leaderId !== ""
+      ? Number(parsed.data.leaderId)
+      : null;
 
-  if (leaderId && !Number.isFinite(leaderId)) return { error: "Líder inválido." };
+  if (leaderId !== null && !Number.isFinite(leaderId)) return { error: "Líder inválido." };
 
   await prisma.voter.create({
     data: {
@@ -56,7 +82,8 @@ export async function createVoterAction(prevState: { error?: string } | undefine
       mesaVotacion: parsed.data.mesaVotacion?.trim() || null,
       leaderId,
       estado: "Votó",
-      origen: "nuevo",
+      origen: origenResolved.origen, // ✅ ya existe
+
       cedulaNorm: normalizeText(ced),
       nombresNorm: normalizeText(parsed.data.nombres),
       apellidosNorm: normalizeText(parsed.data.apellidos),

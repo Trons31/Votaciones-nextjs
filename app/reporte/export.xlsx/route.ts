@@ -46,9 +46,12 @@ export async function GET(request: NextRequest) {
         NOT: [{ dondeVota: "" }, { mesaVotacion: "" }]
       },
       _count: { _all: true },
-      orderBy: [{ dondeVota: "asc" }, { mesaVotacion: "asc" }]
+      orderBy: [{ _count: { id: "desc" } }, { dondeVota: "asc" }, { mesaVotacion: "asc" }]
     }),
-    prisma.leader.findMany({ orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }], select: { id: true, nombresLider: true, apellidosLider: true } }),
+    prisma.leader.findMany({
+      orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }],
+      select: { id: true, nombresLider: true, apellidosLider: true }
+    }),
     prisma.voter.groupBy({
       by: ["leaderId"],
       where: { leaderId: { not: null } },
@@ -62,15 +65,22 @@ export async function GET(request: NextRequest) {
   }
 
   const porLider: Array<[string, number]> = [
-    ["Independientes (sin líder)", totalIndependientes],
+    ["Independientes (sin líder)", totalIndependientes] as [string, number],
     ...leaders.map(
       (l): [string, number] => [`${l.nombresLider} ${l.apellidosLider}`, countMap.get(l.id) ?? 0]
     )
-  ];
-  
-  const porColegio: Array<[string, number]> = porColegioGrouped.map((r) => [r.dondeVota || "(Sin colegio)", r._count._all]);
+  ].sort((a, b) => b[1] - a[1]);
 
-  const porMesa: Array<[string, string, number]> = porMesaGrouped.map((r) => [r.dondeVota!, r.mesaVotacion!, r._count._all]);
+  const porColegio: Array<[string, number]> = porColegioGrouped.map((r) => [
+    r.dondeVota || "(Sin colegio)",
+    r._count._all
+  ]);
+
+  const porMesa: Array<[string, string, number]> = porMesaGrouped.map((r) => [
+    r.dondeVota!,
+    r.mesaVotacion!,
+    r._count._all
+  ]);
 
   const resumen = {
     generado: formatIsoCO(generatedAt),
@@ -84,8 +94,6 @@ export async function GET(request: NextRequest) {
   };
 
   const buf = await reportToXlsx({ resumen, porLider, porColegio, porMesa });
-  
-  // Convierte el Buffer a Uint8Array para compatibilidad con NextResponse
   const uint8Array = new Uint8Array(buf);
 
   return new NextResponse(uint8Array, {

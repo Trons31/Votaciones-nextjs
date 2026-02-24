@@ -12,9 +12,11 @@ type LeaderValues = {
   notas: string;
 };
 
-type FormState = {
-  error?: string;
-} | undefined;
+type FormState =
+  | {
+      error?: string;
+    }
+  | undefined;
 
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -33,12 +35,14 @@ export function LeaderForm({
   title,
   initialValues,
   action,
-  cancelHref
+  cancelHref,
+  canChooseOrigen = false
 }: {
   title: string;
   initialValues: LeaderValues;
   action: (prevState: FormState, formData: FormData) => Promise<FormState>;
   cancelHref: string;
+  canChooseOrigen?: boolean;
 }) {
   const [state, formAction] = useFormState<FormState, FormData>(action, undefined);
 
@@ -47,9 +51,23 @@ export function LeaderForm({
       <h1 className="text-2xl font-semibold">{title}</h1>
 
       <form action={formAction} className="rounded-lg border bg-white p-4 shadow-sm">
-        {state?.error ? <div className="mb-3 rounded-md bg-red-50 p-2 text-sm text-red-700">{state.error}</div> : null}
+        {state?.error ? (
+          <div className="mb-3 rounded-md bg-red-50 p-2 text-sm text-red-700">{state.error}</div>
+        ) : null}
 
         <div className="grid gap-3 md:grid-cols-2">
+          {canChooseOrigen ? (
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-sm font-medium">Tipo de registro</label>
+              <select name="origen" defaultValue="nuevo" className="w-full rounded-md border px-3 py-2 text-sm">
+                <option value="nuevo">Nuevo</option>
+                <option value="precargado">Precargado</option>
+              </select>
+            </div>
+          ) : (
+            <input type="hidden" name="origen" value="nuevo" />
+          )}
+
           <div className="space-y-1">
             <label className="text-sm font-medium">Nombres</label>
             <input
