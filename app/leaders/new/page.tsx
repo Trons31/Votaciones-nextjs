@@ -3,6 +3,9 @@ import { requireAuth } from "@/lib/require-auth";
 import { VoterForm } from "@/components/VoterForm";
 import { createVoterAction } from "@/app/actions/voters";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function NewVoterPage() {
   const user = await requireAuth();
 
