@@ -1,33 +1,26 @@
-import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
-import { VoterForm } from "@/components/VoterForm";
-import { createVoterAction } from "@/app/actions/voters";
+import { LeaderForm } from "@/components/LeaderForm";
+import { createLeaderAction } from "@/app/actions/leaders";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function NewVoterPage() {
+export default async function NewLeaderPage() {
   const user = await requireAuth();
 
-  const leaders = await prisma.leader.findMany({
-    orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }],
-    select: { id: true, nombresLider: true, apellidosLider: true }
-  });
-
   return (
-    <VoterForm
-      title="Nuevo votante"
+    <LeaderForm
+      title="Nuevo líder"
       initialValues={{
-        cedulaVotante: "",
-        nombres: "",
-        apellidos: "",
-        dondeVota: "",
-        mesaVotacion: "",
-        leaderId: "none"
+        nombresLider: "",
+        apellidosLider: "",
+        cedulaLider: "",
+        telefono: "",
+        zonaBarrio: "",
+        notas: ""
       }}
-      leaders={leaders}
-      action={createVoterAction}
-      cancelHref="/voters"
+      action={createLeaderAction}
+      cancelHref="/leaders"
       canChooseOrigen={user.rol === "ADMIN"}
     />
   );

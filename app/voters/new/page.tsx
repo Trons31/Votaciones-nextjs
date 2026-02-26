@@ -8,7 +8,11 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
-export default async function NewVoterPage() {
+export default async function NewVoterPage({
+  searchParams
+}: {
+  searchParams: { leader?: string };
+}) {
   noStore();
   const user = await requireAuth();
 
@@ -17,10 +21,23 @@ export default async function NewVoterPage() {
     select: { id: true, nombresLider: true, apellidosLider: true }
   });
 
+  // ✅ si viene /voters/new?leader=22, preselecciona ese líder
+  const preselectedLeaderId =
+    searchParams.leader && Number.isFinite(Number(searchParams.leader))
+      ? String(searchParams.leader)
+      : "none";
+
   return (
     <VoterForm
       title="Nuevo votante"
-      initialValues={{ cedulaVotante: "", nombres: "", apellidos: "", dondeVota: "", mesaVotacion: "", leaderId: "none" }}
+      initialValues={{
+        cedulaVotante: "",
+        nombres: "",
+        apellidos: "",
+        dondeVota: "",
+        mesaVotacion: "",
+        leaderId: preselectedLeaderId
+      }}
       leaders={leaders}
       action={createVoterAction}
       cancelHref="/voters"
