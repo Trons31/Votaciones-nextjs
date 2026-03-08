@@ -4,65 +4,73 @@ import { prisma } from "@/lib/prisma";
 import { formatDateTimeCO } from "@/lib/time";
 import { FlashMessage } from "@/components/FlashMessage";
 
+const PAGE_SIZE = 10;
+
 export default async function ReportePage({
   searchParams
 }: {
-  searchParams: { flash?: string; tone?: string };
+  searchParams: { flash?: string; tone?: string; page?: string };
 }) {
   await requireAuth();
 
   const generatedAt = new Date();
+  const page = Math.max(1, parseInt(searchParams.page || "1", 10));
 
- const [
-  totalVoters,
-  totalLeaders,
-  totalIndependientes,
-  votersPrecargados,
-  votersNuevos,
-  leadersPrecargados,
-  leadersNuevos,
-  votersConfirmados,
-  leadersConfirmados,
-  porColegio,
-  porMesa,
-  leaders,
-  groupedByLeader
-] = await Promise.all([
-  prisma.voter.count(),
-  prisma.leader.count(),
-  prisma.voter.count({ where: { leaderId: null } }),
-  prisma.voter.count({ where: { origen: "precargado" } }),
-  prisma.voter.count({ where: { origen: "nuevo" } }),
-  prisma.leader.count({ where: { origen: "precargado" } }),
-  prisma.leader.count({ where: { origen: "nuevo" } }),
-  prisma.voter.count({ where: { checkedIn: true } }),
-  prisma.leader.count({ where: { checkedIn: true } }),
-  prisma.voter.groupBy({
-    by: ["dondeVota"],
-    where: { dondeVota: { not: null }, NOT: { dondeVota: "" } },
-    _count: { _all: true },
-    orderBy: { _count: { id: "desc" } }
-  }),
-  prisma.voter.groupBy({
-    by: ["dondeVota", "mesaVotacion"],
-    where: {
-      dondeVota: { not: null },
-      mesaVotacion: { not: null },
-      NOT: [{ dondeVota: "" }, { mesaVotacion: "" }]
-    },
-    _count: { _all: true },
-    orderBy: [{ _count: { id: "desc" } }, { dondeVota: "asc" }, { mesaVotacion: "asc" }]
-  }),
-  prisma.leader.findMany({
-    orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }],
-    select: { id: true, nombresLider: true, apellidosLider: true }
-  }),
-  prisma.voter.groupBy({
-    by: ["leaderId"],
-    where: { leaderId: { not: null } },
-    _count: { _all: true }
-  })
-]);
+  const [
+    totalVoters,
+    totalLeaders,
+    totalIndependientes,
+    votersPrecargados,
+    votersNuevos,
+    leadersPrecargados,
+    leadersNuevos,
+    votersConfirmados,
+    leadersConfirmados,
+    porColegio,
+    allMesas,
+    leaders,
+    groupedByLeader
+  ] = await Promise.all([
+    prisma.voter.count(),
+    prisma.leader.count(),
+    prisma.voter.count({ where: { leaderId: null } }),
+    prisma.voter.count({ where: { origen: "precargado" } }),
+    prisma.voter.count({ where: { origen: "nuevo" } }),
+    prisma.leader.count({ where: { origen: "precargado" } }),
+    prisma.leader.count({ where: { origen: "nuevo" } }),
+    prisma.voter.count({ where: { checkedIn: true } }),
+    prisma.leader.count({ where: { checkedIn: true } }),
+    prisma.voter.groupBy({
+      by: ["dondeVota"],
+      where: { dondeVota: { not: null }, NOT: { dondeVota: "" } },
+      _count: { _all: true },
+      orderBy: { _count: { id: "desc" } }
+    }),
+    // Todas las combinaciones colegio+mesa (groupBy no soporta skip/take en Prisma)
+    prisma.voter.groupBy({
+      by: ["dondeVota", "mesaVotacion"],
+      where: {
+        dondeVota: { not: null },
+        mesaVotacion: { not: null },
+        NOT: [{ dondeVota: "" }, { mesaVotacion: "" }]
+      },
+      _count: { _all: true },
+      orderBy: [{ _count: { id: "desc" } }, { dondeVota: "asc" }, { mesaVotacion: "asc" }]
+    }),
+    prisma.leader.findMany({
+      orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }],
+      select: { id: true, nombresLider: true, apellidosLider: true }
+    }),
+    prisma.voter.groupBy({
+      by: ["leaderId"],
+      where: { leaderId: { not: null } },
+      _count: { _all: true }
+    })
+  ]);
+
+  const totalMesas = allMesas.length;
+  const porMesa = allMesas.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(totalMesas / PAGE_SIZE));
 
   const countMap = new Map<number, number>();
   for (const g of groupedByLeader) {
@@ -70,14 +78,14 @@ export default async function ReportePage({
   }
 
   const porLiderRows: Array<{ lider: string; count: number; isIndependiente?: boolean }> = [
-  { lider: "Independientes (sin líder)", count: totalIndependientes, isIndependiente: true },
-  ...leaders.map((l) => ({
-    lider: `${l.nombresLider} ${l.apellidosLider}`,
-    count: countMap.get(l.id) ?? 0
-  }))
-]
-  .filter((r) => r.count > 0)
-  .sort((a, b) => b.count - a.count);
+    { lider: "Independientes (sin líder)", count: totalIndependientes, isIndependiente: true },
+    ...leaders.map((l) => ({
+      lider: `${l.nombresLider} ${l.apellidosLider}`,
+      count: countMap.get(l.id) ?? 0
+    }))
+  ]
+    .filter((r) => r.count > 0)
+    .sort((a, b) => b.count - a.count);
 
   const flash = searchParams.flash ? decodeURIComponent(searchParams.flash) : "";
   const tone =
@@ -85,19 +93,20 @@ export default async function ReportePage({
       ? (searchParams.tone as any)
       : "info";
 
-  // Calcular porcentajes
   const porcentajeConfirmados = totalVoters > 0 ? Math.round((votersConfirmados / totalVoters) * 100) : 0;
   const porcentajeLideresConfirmados = totalLeaders > 0 ? Math.round((leadersConfirmados / totalLeaders) * 100) : 0;
-  const porcentajeIndependientes = totalVoters > 0 ? Math.round((totalIndependientes / totalVoters) * 100) : 0;
 
-  // Max counts para barras
   const maxColegioCount = porColegio.length > 0 ? Math.max(...porColegio.map((r) => r._count._all)) : 1;
   const maxLiderCount = porLiderRows.length > 0 ? Math.max(...porLiderRows.map((r) => r.count)) : 1;
+
+  function pageHref(p: number) {
+    return `/reporte?page=${p}`;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-orange-50 to-red-50 p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        {/* Header Section */}
+        {/* Header */}
         <div className="rounded-xl bg-white/80 p-6 shadow-lg backdrop-blur-sm">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -107,18 +116,11 @@ export default async function ReportePage({
                 </svg>
               </div>
               <div>
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-                  Reporte General
-                </h1>
-                <p className="text-sm text-slate-600">
-                  Resumen completo del sistema
-                </p>
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900">Reporte General</h1>
+                <p className="text-sm text-slate-600">Resumen completo del sistema</p>
               </div>
             </div>
-          
           </div>
-          
-          {/* Timestamp */}
           <div className="mt-4 flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-2 text-sm text-slate-600">
             <svg className="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -127,16 +129,15 @@ export default async function ReportePage({
           </div>
         </div>
 
-        {/* Flash Message */}
+        {/* Flash */}
         {flash && (
           <div className="animate-fade-in">
             <FlashMessage message={flash} tone={tone} />
           </div>
         )}
 
-        {/* Main KPI Cards */}
+        {/* KPI Cards */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Total Votantes */}
           <div className="rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
@@ -150,16 +151,11 @@ export default async function ReportePage({
               </div>
             </div>
             <div className="mt-3 flex items-center gap-2 text-xs text-blue-100">
-              <span className="rounded-full bg-white/20 px-2 py-0.5">
-               {votersPrecargados} precargados
-              </span>
-              <span className="rounded-full bg-white/20 px-2 py-0.5">
-                {votersNuevos} nuevos
-              </span>
+              <span className="rounded-full bg-white/20 px-2 py-0.5">{votersPrecargados} precargados</span>
+              <span className="rounded-full bg-white/20 px-2 py-0.5">{votersNuevos} nuevos</span>
             </div>
           </div>
 
-          {/* Total Líderes */}
           <div className="rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
@@ -172,17 +168,12 @@ export default async function ReportePage({
                 </svg>
               </div>
             </div>
-                <div className="mt-3 flex items-center gap-2 text-xs text-purple-100">
-        <span className="rounded-full bg-white/20 px-2 py-0.5">
-          {leadersPrecargados} precargados
-        </span>
-        <span className="rounded-full bg-white/20 px-2 py-0.5">
-          {leadersNuevos} nuevos
-        </span>
-      </div>
+            <div className="mt-3 flex items-center gap-2 text-xs text-purple-100">
+              <span className="rounded-full bg-white/20 px-2 py-0.5">{leadersPrecargados} precargados</span>
+              <span className="rounded-full bg-white/20 px-2 py-0.5">{leadersNuevos} nuevos</span>
+            </div>
           </div>
 
-          {/* Votantes Confirmados */}
           <div className="rounded-xl bg-gradient-to-br from-green-500 to-green-600 p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
@@ -201,15 +192,11 @@ export default async function ReportePage({
                 <span className="font-semibold">{porcentajeConfirmados}%</span>
               </div>
               <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-white/20">
-                <div 
-                  className="h-full rounded-full bg-white transition-all duration-1000" 
-                  style={{ width: `${porcentajeConfirmados}%` }}
-                />
+                <div className="h-full rounded-full bg-white transition-all duration-1000" style={{ width: `${porcentajeConfirmados}%` }} />
               </div>
             </div>
           </div>
 
-          {/* Líderes Confirmados */}
           <div className="rounded-xl bg-gradient-to-br from-orange-500 to-red-500 p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
@@ -228,18 +215,15 @@ export default async function ReportePage({
                 <span className="font-semibold">{porcentajeLideresConfirmados}%</span>
               </div>
               <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-white/20">
-                <div 
-                  className="h-full rounded-full bg-white transition-all duration-1000" 
-                  style={{ width: `${porcentajeLideresConfirmados}%` }}
-                />
+                <div className="h-full rounded-full bg-white transition-all duration-1000" style={{ width: `${porcentajeLideresConfirmados}%` }} />
               </div>
             </div>
           </div>
         </div>
 
-        {/* Charts Section */}
+        {/* Charts */}
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Distribución por Colegio */}
+          {/* Por Colegio */}
           <div className="rounded-xl bg-white/80 p-6 shadow-lg backdrop-blur-sm">
             <div className="mb-4 flex items-center gap-2 border-b border-slate-200 pb-3">
               <div className="rounded-lg bg-orange-100 p-2">
@@ -252,39 +236,29 @@ export default async function ReportePage({
                 <p className="text-xs text-slate-600">{porColegio.length} puestos de votación</p>
               </div>
             </div>
-
             <div className="max-h-96 space-y-3 overflow-y-auto pr-2">
-              {porColegio.length > 0 ? (
-                porColegio.map((r, idx) => {
-                  const width = (r._count._all / maxColegioCount) * 100;
-                  const porcentaje = totalVoters > 0 ? Math.round((r._count._all / totalVoters) * 100) : 0;
-                  return (
-                    <div key={r.dondeVota || idx} className="group">
-                      <div className="mb-1 flex items-center justify-between text-sm">
-                        <span className="truncate font-medium text-slate-700">
-                          {r.dondeVota || "(Sin colegio)"}
-                        </span>
-                        <div className="ml-2 flex items-center gap-2">
-                          <span className="text-xs text-slate-500">{porcentaje}%</span>
-                          <span className="font-bold text-orange-600">{r._count._all}</span>
-                        </div>
-                      </div>
-                      <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-orange-500 to-red-500 transition-all duration-500 ease-out"
-                          style={{ width: `${width}%` }}
-                        />
+              {porColegio.length > 0 ? porColegio.map((r, idx) => {
+                const width = (r._count._all / maxColegioCount) * 100;
+                const porcentaje = totalVoters > 0 ? Math.round((r._count._all / totalVoters) * 100) : 0;
+                return (
+                  <div key={r.dondeVota || idx}>
+                    <div className="mb-1 flex items-center justify-between text-sm">
+                      <span className="truncate font-medium text-slate-700">{r.dondeVota || "(Sin colegio)"}</span>
+                      <div className="ml-2 flex items-center gap-2">
+                        <span className="text-xs text-slate-500">{porcentaje}%</span>
+                        <span className="font-bold text-orange-600">{r._count._all}</span>
                       </div>
                     </div>
-                  );
-                })
-              ) : (
-                <div className="py-8 text-center text-sm text-slate-500">Sin datos disponibles</div>
-              )}
+                    <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-gradient-to-r from-orange-500 to-red-500 transition-all duration-500" style={{ width: `${width}%` }} />
+                    </div>
+                  </div>
+                );
+              }) : <div className="py-8 text-center text-sm text-slate-500">Sin datos disponibles</div>}
             </div>
           </div>
 
-          {/* Distribución por Líder */}
+          {/* Por Líder */}
           <div className="rounded-xl bg-white/80 p-6 shadow-lg backdrop-blur-sm">
             <div className="mb-4 flex items-center gap-2 border-b border-slate-200 pb-3">
               <div className="rounded-lg bg-purple-100 p-2">
@@ -297,49 +271,40 @@ export default async function ReportePage({
                 <p className="text-xs text-slate-600">{porLiderRows.length} categorías</p>
               </div>
             </div>
-
             <div className="max-h-96 space-y-3 overflow-y-auto pr-2">
-              {porLiderRows.length > 0 ? (
-                porLiderRows.map((r, idx) => {
-                  const width = (r.count / maxLiderCount) * 100;
-                  const porcentaje = totalVoters > 0 ? Math.round((r.count / totalVoters) * 100) : 0;
-                  return (
-                    <div key={idx} className="group">
-                      <div className="mb-1 flex items-center justify-between text-sm">
-                        <span className="flex items-center gap-2 truncate font-medium text-slate-700">
-                          {r.isIndependiente && (
-                            <svg className="h-4 w-4 flex-shrink-0 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6z" />
-                            </svg>
-                          )}
-                          {r.lider}
-                        </span>
-                        <div className="ml-2 flex items-center gap-2">
-                          <span className="text-xs text-slate-500">{porcentaje}%</span>
-                          <span className="font-bold text-purple-600">{r.count}</span>
-                        </div>
-                      </div>
-                      <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ease-out ${
-                            r.isIndependiente 
-                              ? "bg-gradient-to-r from-slate-400 to-slate-500" 
-                              : "bg-gradient-to-r from-purple-500 to-purple-600"
-                          }`}
-                          style={{ width: `${width}%` }}
-                        />
+              {porLiderRows.length > 0 ? porLiderRows.map((r, idx) => {
+                const width = (r.count / maxLiderCount) * 100;
+                const porcentaje = totalVoters > 0 ? Math.round((r.count / totalVoters) * 100) : 0;
+                return (
+                  <div key={idx}>
+                    <div className="mb-1 flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2 truncate font-medium text-slate-700">
+                        {r.isIndependiente && (
+                          <svg className="h-4 w-4 flex-shrink-0 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6z" />
+                          </svg>
+                        )}
+                        {r.lider}
+                      </span>
+                      <div className="ml-2 flex items-center gap-2">
+                        <span className="text-xs text-slate-500">{porcentaje}%</span>
+                        <span className="font-bold text-purple-600">{r.count}</span>
                       </div>
                     </div>
-                  );
-                })
-              ) : (
-                <div className="py-8 text-center text-sm text-slate-500">Sin datos disponibles</div>
-              )}
+                    <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${r.isIndependiente ? "bg-gradient-to-r from-slate-400 to-slate-500" : "bg-gradient-to-r from-purple-500 to-purple-600"}`}
+                        style={{ width: `${width}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              }) : <div className="py-8 text-center text-sm text-slate-500">Sin datos disponibles</div>}
             </div>
           </div>
         </div>
 
-        {/* Mesa Details Table */}
+        {/* Detalle por Mesa */}
         <div className="rounded-xl bg-white/80 shadow-lg backdrop-blur-sm">
           <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100 p-5 rounded-t-xl">
             <div className="flex items-center gap-2">
@@ -350,7 +315,9 @@ export default async function ReportePage({
               </div>
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Detalle por Mesa</h3>
-                <p className="text-xs text-slate-600">Distribución completa por colegio y mesa</p>
+                <p className="text-xs text-slate-600">
+                  Distribución completa por colegio y mesa · {totalMesas} registros
+                </p>
               </div>
             </div>
           </div>
@@ -367,7 +334,7 @@ export default async function ReportePage({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {porMesa.map((r, idx) => {
+                  {porMesa.map((r) => {
                     const porcentaje = totalVoters > 0 ? ((r._count._all / totalVoters) * 100).toFixed(1) : "0.0";
                     return (
                       <tr key={`${r.dondeVota}|${r.mesaVotacion}`} className="transition-colors hover:bg-slate-50">
@@ -397,8 +364,123 @@ export default async function ReportePage({
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <Pagination
+                currentPage={page}
+                totalPages={totalPages}
+                total={totalMesas}
+                pageSize={PAGE_SIZE}
+                prevHref={page > 1 ? pageHref(page - 1) : null}
+                nextHref={page < totalPages ? pageHref(page + 1) : null}
+                buildPageHref={pageHref}
+              />
+            )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Pagination component ─────────────────────────────────────────────── */
+
+function Pagination({
+  currentPage,
+  totalPages,
+  total,
+  pageSize,
+  prevHref,
+  nextHref,
+  buildPageHref
+}: {
+  currentPage: number;
+  totalPages: number;
+  total: number;
+  pageSize: number;
+  prevHref: string | null;
+  nextHref: string | null;
+  buildPageHref: (page: number) => string;
+}) {
+  const from = (currentPage - 1) * pageSize + 1;
+  const to = Math.min(currentPage * pageSize, total);
+
+  const pages: (number | "…")[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (currentPage > 3) pages.push("…");
+    for (
+      let i = Math.max(2, currentPage - 1);
+      i <= Math.min(totalPages - 1, currentPage + 1);
+      i++
+    ) {
+      pages.push(i);
+    }
+    if (currentPage < totalPages - 2) pages.push("…");
+    pages.push(totalPages);
+  }
+
+  return (
+    <div className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
+      <p className="text-xs text-slate-500">
+        Mostrando <span className="font-semibold text-slate-700">{from}–{to}</span> de{" "}
+        <span className="font-semibold text-slate-700">{total}</span> mesas
+      </p>
+
+      <div className="flex items-center gap-1">
+        {prevHref ? (
+          <Link
+            href={prevHref}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+            aria-label="Página anterior"
+          >
+            ‹
+          </Link>
+        ) : (
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-100 bg-slate-50 text-sm text-slate-300 cursor-not-allowed">
+            ‹
+          </span>
+        )}
+
+        {pages.map((p, i) =>
+          p === "…" ? (
+            <span key={`ellipsis-${i}`} className="inline-flex h-8 w-8 items-center justify-center text-sm text-slate-400">
+              …
+            </span>
+          ) : p === currentPage ? (
+            <span
+              key={p}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-orange-500 text-xs font-semibold text-white shadow-sm"
+            >
+              {p}
+            </span>
+          ) : (
+            <Link
+              key={p}
+              href={buildPageHref(p)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+            >
+              {p}
+            </Link>
+          )
+        )}
+
+        {nextHref ? (
+          <Link
+            href={nextHref}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+            aria-label="Página siguiente"
+          >
+            ›
+          </Link>
+        ) : (
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-100 bg-slate-50 text-sm text-slate-300 cursor-not-allowed">
+            ›
+          </span>
+        )}
       </div>
     </div>
   );

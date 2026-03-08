@@ -8,29 +8,69 @@ import { deleteLeaderAction, toggleLeaderCheckInAction } from "@/app/actions/lea
 import { toggleVoterCheckInAction } from "@/app/actions/voters";
 import { DeleteLeaderButton } from "@/components/DeleteLeaderButton";
 
+const PAGE_SIZE = 10;
+
 export default async function LeaderDetailPage({
   params,
   searchParams
 }: {
   params: { id: string };
-  searchParams: { flash?: string; tone?: string };
+  searchParams: { flash?: string; tone?: string; page?: string; q?: string };
 }) {
   await requireAuth();
 
   const id = Number(params.id);
   if (!Number.isFinite(id)) notFound();
 
+  const page = Math.max(1, parseInt(searchParams.page || "1", 10));
+  const q = (searchParams.q || "").trim();
+
   const leader = await prisma.leader.findUnique({
     where: { id },
-    include: {
-      voters: {
-        include: { leader: { select: { id: true, nombresLider: true, apellidosLider: true } } },
-        orderBy: [{ apellidos: "asc" }, { nombres: "asc" }]
-      }
+    select: {
+      id: true,
+      nombresLider: true,
+      apellidosLider: true,
+      cedulaLider: true,
+      telefono: true,
+      zonaBarrio: true,
+      checkedIn: true,
+      checkedInAt: true,
+      notas: true,
     }
   });
 
   if (!leader) notFound();
+
+  // Filtro de búsqueda (normalizado)
+  const qNorm = q.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const searchWhere = qNorm
+    ? {
+        leaderId: id,
+        OR: [
+          { cedulaNorm: { contains: qNorm } },
+          { nombresNorm: { contains: qNorm } },
+          { apellidosNorm: { contains: qNorm } },
+        ],
+      }
+    : { leaderId: id };
+
+  // Stats globales siempre sobre el total sin filtro
+  const [totalVoters, confirmedVoters, filteredTotal, voters] = await Promise.all([
+    prisma.voter.count({ where: { leaderId: id } }),
+    prisma.voter.count({ where: { leaderId: id, checkedIn: true } }),
+    prisma.voter.count({ where: searchWhere }),
+    prisma.voter.findMany({
+      where: searchWhere,
+      orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+    })
+  ]);
+
+  const pendingVoters = totalVoters - confirmedVoters;
+  const confirmationRate = totalVoters > 0 ? Math.round((confirmedVoters / totalVoters) * 100) : 0;
+  const totalPages = Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE));
 
   const flash = searchParams.flash ? decodeURIComponent(searchParams.flash) : "";
   const tone =
@@ -38,13 +78,12 @@ export default async function LeaderDetailPage({
       ? (searchParams.tone as any)
       : "info";
 
-  const exportBase = `/export/leader/${leader.id}`;
-
-  // Calcular estadísticas
-  const totalVoters = leader.voters.length;
-  const confirmedVoters = leader.voters.filter(v => v.checkedIn).length;
-  const pendingVoters = totalVoters - confirmedVoters;
-  const confirmationRate = totalVoters > 0 ? Math.round((confirmedVoters / totalVoters) * 100) : 0;
+  function pageHref(p: number) {
+    const params = new URLSearchParams();
+    params.set("page", String(p));
+    if (q) params.set("q", q);
+    return `/leaders/${id}?${params.toString()}`;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-violet-50 to-purple-50 p-4 md:p-6 lg:p-8">
@@ -81,8 +120,7 @@ export default async function LeaderDetailPage({
                 <h1 className="text-3xl font-bold text-slate-900">
                   {leader.nombresLider} {leader.apellidosLider}
                 </h1>
-                
-                {/* Info badges */}
+
                 <div className="mt-3 flex flex-wrap gap-2">
                   {leader.cedulaLider && (
                     <div className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-sm">
@@ -92,7 +130,7 @@ export default async function LeaderDetailPage({
                       <span className="font-medium text-blue-700">{leader.cedulaLider}</span>
                     </div>
                   )}
-                  
+
                   {leader.telefono && (
                     <div className="inline-flex items-center gap-1.5 rounded-lg bg-green-50 px-3 py-1.5 text-sm">
                       <svg className="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -101,7 +139,7 @@ export default async function LeaderDetailPage({
                       <span className="font-medium text-green-700">{leader.telefono}</span>
                     </div>
                   )}
-                  
+
                   {leader.zonaBarrio && (
                     <div className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-sm">
                       <svg className="h-4 w-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -113,7 +151,6 @@ export default async function LeaderDetailPage({
                   )}
                 </div>
 
-                {/* Status Badge */}
                 <div className="mt-3">
                   {leader.checkedIn ? (
                     <div className="inline-flex items-center gap-2 rounded-lg bg-green-100 px-3 py-2 text-sm">
@@ -129,7 +166,6 @@ export default async function LeaderDetailPage({
                   )}
                 </div>
 
-                {/* Notes */}
                 {leader.notas && (
                   <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
                     <div className="flex items-start gap-2">
@@ -145,8 +181,8 @@ export default async function LeaderDetailPage({
 
             {/* Action Buttons */}
             <div className="flex flex-wrap gap-2">
-              <Link 
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-200" 
+              <Link
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-200"
                 href={`/leaders/${leader.id}/edit`}
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -156,10 +192,10 @@ export default async function LeaderDetailPage({
               </Link>
 
               <form action={toggleLeaderCheckInAction.bind(null, leader.id)}>
-                <button 
+                <button
                   className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
-                    leader.checkedIn 
-                      ? "bg-amber-100 text-amber-700 hover:bg-amber-200" 
+                    leader.checkedIn
+                      ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
                       : "bg-green-500 text-white hover:bg-green-600 shadow-md"
                   }`}
                   type="submit"
@@ -182,27 +218,21 @@ export default async function LeaderDetailPage({
                 </button>
               </form>
 
-                      <Link
-          className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-violet-700 shadow-md"
-          href={`/voters/new?leader=${leader.id}`}
-        >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M18 9v3m0 0v3m0-3h3m-3 0h-3M11 11a4 4 0 100-8 4 4 0 000 8zm-7 10a7 7 0 0114 0v1H4v-1z"
-            />
-          </svg>
-          Agregar votante del lider
-        </Link>
+              <Link
+                className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-violet-700 shadow-md"
+                href={`/voters/new?leader=${leader.id}`}
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3M11 11a4 4 0 100-8 4 4 0 000 8zm-7 10a7 7 0 0114 0v1H4v-1z" />
+                </svg>
+                Agregar votante del lider
+              </Link>
             </div>
           </div>
         </div>
 
         {/* Stats Cards */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Total Votantes */}
           <div className="rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
@@ -218,7 +248,6 @@ export default async function LeaderDetailPage({
             <div className="mt-3 text-xs text-blue-100">Asignados a este líder</div>
           </div>
 
-          {/* Confirmados */}
           <div className="rounded-xl bg-gradient-to-br from-green-500 to-green-600 p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
@@ -234,7 +263,6 @@ export default async function LeaderDetailPage({
             <div className="mt-3 text-xs text-green-100">Han llegado a votar</div>
           </div>
 
-          {/* Pendientes */}
           <div className="rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
@@ -250,7 +278,6 @@ export default async function LeaderDetailPage({
             <div className="mt-3 text-xs text-orange-100">Aún no confirmados</div>
           </div>
 
-          {/* Tasa de Confirmación */}
           <div className="rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
@@ -264,12 +291,9 @@ export default async function LeaderDetailPage({
               </div>
             </div>
             <div className="mt-3">
-              <div className="flex items-center justify-between text-xs text-purple-100">
-                <span>Confirmación</span>
-              </div>
               <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-white/20">
-                <div 
-                  className="h-full rounded-full bg-white transition-all duration-1000" 
+                <div
+                  className="h-full rounded-full bg-white transition-all duration-1000"
                   style={{ width: `${confirmationRate}%` }}
                 />
               </div>
@@ -280,7 +304,7 @@ export default async function LeaderDetailPage({
         {/* Voters Table */}
         <div className="rounded-xl bg-white/80 shadow-lg backdrop-blur-sm">
           <div className="border-b border-slate-200 bg-gradient-to-r from-violet-50 to-purple-50 p-5 rounded-t-xl">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-violet-500 p-2">
                   <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -289,18 +313,58 @@ export default async function LeaderDetailPage({
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">Votantes del Líder</h2>
-                  <p className="text-xs text-slate-600">{totalVoters} votantes asignados</p>
+                  <p className="text-xs text-slate-600">
+                    {q
+                      ? `${filteredTotal} resultado${filteredTotal !== 1 ? "s" : ""} · ${totalVoters} total`
+                      : `${totalVoters} votantes asignados`}
+                  </p>
                 </div>
               </div>
-              <Link 
-                className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-violet-700" 
-                href={`/voters?leader=${leader.id}`}
-              >
-                Ver en Votantes
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
-              </Link>
+
+              <div className="flex items-center gap-2">
+                {/* Buscador */}
+                <form method="GET" action={`/leaders/${id}`} className="flex items-center gap-2">
+                  <div className="relative">
+                    <svg className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      name="q"
+                      defaultValue={q}
+                      placeholder="Buscar por nombre o cédula…"
+                      className="w-56 rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-sm text-slate-900 placeholder-slate-400 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-400/20"
+                    />
+                    {q && (
+                      <a
+                        href={`/leaders/${id}`}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        title="Limpiar búsqueda"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </a>
+                    )}
+                  </div>
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700"
+                  >
+                    Buscar
+                  </button>
+                </form>
+
+                <Link
+                  className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-violet-700"
+                  href={`/voters?leader=${leader.id}`}
+                >
+                  Ver en Votantes
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -318,7 +382,7 @@ export default async function LeaderDetailPage({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {leader.voters.map((v) => (
+                  {voters.map((v) => (
                     <tr key={v.id} className="transition-colors hover:bg-slate-50">
                       <td className="px-4 py-3">
                         <span className="font-mono text-slate-900">{v.cedulaVotante}</span>
@@ -334,9 +398,7 @@ export default async function LeaderDetailPage({
                           <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
                             Mesa {v.mesaVotacion}
                           </span>
-                        ) : (
-                          "—"
-                        )}
+                        ) : "—"}
                       </td>
                       <td className="px-4 py-3">
                         {v.checkedIn ? (
@@ -356,20 +418,20 @@ export default async function LeaderDetailPage({
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-2">
-                          <Link 
-                            className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-200" 
+                          <Link
+                            className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-200"
                             href={`/voters/${v.id}/edit`}
                           >
                             Editar
                           </Link>
                           <form action={toggleVoterCheckInAction.bind(null, v.id)}>
-                            <button 
+                            <button
                               className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
                                 v.checkedIn
                                   ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
                                   : "bg-green-500 text-white hover:bg-green-600"
                               }`}
-                              type="submit" 
+                              type="submit"
                               title={v.checkedIn ? "Desmarcar" : "Confirmar"}
                             >
                               {v.checkedIn ? "↩" : "✓"}
@@ -379,20 +441,31 @@ export default async function LeaderDetailPage({
                       </td>
                     </tr>
                   ))}
-                  {leader.voters.length === 0 && (
+                  {voters.length === 0 && (
                     <tr>
                       <td className="px-4 py-12 text-center text-sm text-slate-500" colSpan={6}>
                         <div className="flex flex-col items-center gap-2">
                           <svg className="h-12 w-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                           </svg>
-                          <p className="font-medium">Este líder aún no tiene votantes</p>
-                          <Link 
-                            href="/voters/new" 
-                            className="mt-2 text-xs text-violet-600 hover:text-violet-700 hover:underline"
-                          >
-                            Agregar votante →
-                          </Link>
+                          {q ? (
+                            <>
+                              <p className="font-medium">Sin resultados para "{q}"</p>
+                              <a href={`/leaders/${id}`} className="mt-1 text-xs text-violet-600 hover:underline">
+                                Limpiar búsqueda
+                              </a>
+                            </>
+                          ) : (
+                            <>
+                              <p className="font-medium">Este líder aún no tiene votantes</p>
+                              <Link
+                                href={`/voters/new?leader=${id}`}
+                                className="mt-2 text-xs text-violet-600 hover:text-violet-700 hover:underline"
+                              >
+                                Agregar votante →
+                              </Link>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -400,6 +473,19 @@ export default async function LeaderDetailPage({
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <Pagination
+                currentPage={page}
+                totalPages={totalPages}
+                total={filteredTotal}
+                pageSize={PAGE_SIZE}
+                prevHref={page > 1 ? pageHref(page - 1) : null}
+                nextHref={page < totalPages ? pageHref(page + 1) : null}
+                buildPageHref={pageHref}
+              />
+            )}
           </div>
         </div>
 
@@ -419,12 +505,114 @@ export default async function LeaderDetailPage({
                 </p>
               </div>
             </div>
-            <DeleteLeaderButton 
-              leaderId={leader.id} 
+            <DeleteLeaderButton
+              leaderId={leader.id}
               leaderName={`${leader.nombresLider} ${leader.apellidosLider}`}
             />
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Pagination component ─────────────────────────────────────────────── */
+
+function Pagination({
+  currentPage,
+  totalPages,
+  total,
+  pageSize,
+  prevHref,
+  nextHref,
+  buildPageHref
+}: {
+  currentPage: number;
+  totalPages: number;
+  total: number;
+  pageSize: number;
+  prevHref: string | null;
+  nextHref: string | null;
+  buildPageHref: (page: number) => string;
+}) {
+  const from = (currentPage - 1) * pageSize + 1;
+  const to = Math.min(currentPage * pageSize, total);
+
+  const pages: (number | "…")[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (currentPage > 3) pages.push("…");
+    for (
+      let i = Math.max(2, currentPage - 1);
+      i <= Math.min(totalPages - 1, currentPage + 1);
+      i++
+    ) {
+      pages.push(i);
+    }
+    if (currentPage < totalPages - 2) pages.push("…");
+    pages.push(totalPages);
+  }
+
+  return (
+    <div className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
+      <p className="text-xs text-slate-500">
+        Mostrando <span className="font-semibold text-slate-700">{from}–{to}</span> de{" "}
+        <span className="font-semibold text-slate-700">{total}</span> votantes
+      </p>
+
+      <div className="flex items-center gap-1">
+        {prevHref ? (
+          <Link
+            href={prevHref}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+            aria-label="Página anterior"
+          >
+            ‹
+          </Link>
+        ) : (
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-100 bg-slate-50 text-sm text-slate-300 cursor-not-allowed">
+            ‹
+          </span>
+        )}
+
+        {pages.map((p, i) =>
+          p === "…" ? (
+            <span key={`ellipsis-${i}`} className="inline-flex h-8 w-8 items-center justify-center text-sm text-slate-400">
+              …
+            </span>
+          ) : p === currentPage ? (
+            <span
+              key={p}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-violet-600 text-xs font-semibold text-white shadow-sm"
+            >
+              {p}
+            </span>
+          ) : (
+            <Link
+              key={p}
+              href={buildPageHref(p)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+            >
+              {p}
+            </Link>
+          )
+        )}
+
+        {nextHref ? (
+          <Link
+            href={nextHref}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+            aria-label="Página siguiente"
+          >
+            ›
+          </Link>
+        ) : (
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-100 bg-slate-50 text-sm text-slate-300 cursor-not-allowed">
+            ›
+          </span>
+        )}
       </div>
     </div>
   );

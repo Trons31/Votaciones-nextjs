@@ -6,15 +6,20 @@ import { toggleLeaderCheckInAction } from "@/app/actions/leaders";
 import { FlashMessage } from "@/components/FlashMessage";
 import { formatDateTimeCO } from "@/lib/time";
 
+const PAGE_SIZE = 10;
+
 export default async function LeadersPage({
   searchParams
 }: {
-  searchParams: { q?: string; flash?: string; tone?: string };
+  searchParams: { q?: string; flash?: string; tone?: string; pagePending?: string; pageChecked?: string };
 }) {
   await requireAuth();
 
   const q = (searchParams.q || "").trim();
   const qNorm = q ? normalizeText(q) : "";
+
+  const pagePending = Math.max(1, parseInt(searchParams.pagePending || "1", 10));
+  const pageChecked = Math.max(1, parseInt(searchParams.pageChecked || "1", 10));
 
   const where = qNorm
     ? {
@@ -28,15 +33,27 @@ export default async function LeadersPage({
       }
     : {};
 
-  const [leadersPending, leadersChecked, counts] = await Promise.all([
+  const [
+    leadersPending,
+    leadersChecked,
+    totalPending,
+    totalChecked,
+    counts
+  ] = await Promise.all([
     prisma.leader.findMany({
       where: { ...where, checkedIn: false },
-      orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }]
+      orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }],
+      skip: (pagePending - 1) * PAGE_SIZE,
+      take: PAGE_SIZE
     }),
     prisma.leader.findMany({
       where: { ...where, checkedIn: true },
-      orderBy: [{ checkedInAt: "desc" }]
+      orderBy: [{ checkedInAt: "desc" }],
+      skip: (pageChecked - 1) * PAGE_SIZE,
+      take: PAGE_SIZE
     }),
+    prisma.leader.count({ where: { ...where, checkedIn: false } }),
+    prisma.leader.count({ where: { ...where, checkedIn: true } }),
     prisma.voter.groupBy({
       by: ["leaderId"],
       where: { leaderId: { not: null } },
@@ -49,16 +66,32 @@ export default async function LeadersPage({
     if (c.leaderId) countMap.set(c.leaderId, c._count._all);
   }
 
+  const totalPagesPending = Math.max(1, Math.ceil(totalPending / PAGE_SIZE));
+  const totalPagesChecked = Math.max(1, Math.ceil(totalChecked / PAGE_SIZE));
+
   const flash = searchParams.flash ? decodeURIComponent(searchParams.flash) : "";
   const tone =
     searchParams.tone === "success" || searchParams.tone === "warning" || searchParams.tone === "danger"
       ? (searchParams.tone as any)
       : "info";
 
+  /** Builds a href preserving all current searchParams but overriding specific ones */
+  function buildHref(overrides: Record<string, string | number>) {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    params.set("pagePending", String(pagePending));
+    params.set("pageChecked", String(pageChecked));
+    for (const [k, v] of Object.entries(overrides)) {
+      params.set(k, String(v));
+    }
+    return `/leaders?${params.toString()}`;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        {/* Header Section */}
+
+        {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-white/80 p-6 shadow-lg backdrop-blur-sm">
           <div className="space-y-1">
             <h1 className="text-3xl font-bold tracking-tight text-slate-900">
@@ -68,8 +101,8 @@ export default async function LeadersPage({
               Controla la asistencia de tus líderes en tiempo real
             </p>
           </div>
-          <Link 
-            href="/leaders/new" 
+          <Link
+            href="/leaders/new"
             className="group inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg hover:scale-105"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -79,25 +112,23 @@ export default async function LeadersPage({
           </Link>
         </div>
 
-        {/* Flash Message */}
+        {/* Flash */}
         {flash && (
           <div className="animate-fade-in">
             <FlashMessage message={flash} tone={tone} />
           </div>
         )}
 
-        {/* Search Section */}
-        <form 
-          className="rounded-xl bg-white/80 p-5 shadow-lg backdrop-blur-sm transition-all hover:shadow-xl" 
+        {/* Search */}
+        <form
+          className="rounded-xl bg-white/80 p-5 shadow-lg backdrop-blur-sm transition-all hover:shadow-xl"
           method="get"
         >
           <div className="flex flex-col gap-3 sm:flex-row">
             <div className="relative flex-1">
-              <svg 
-                className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
+              <svg
+                className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
+                fill="none" stroke="currentColor" viewBox="0 0 24 24"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
@@ -109,14 +140,14 @@ export default async function LeadersPage({
               />
             </div>
             <div className="flex gap-2">
-              <button 
-                className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-slate-800 hover:shadow-md" 
+              <button
+                className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-slate-800 hover:shadow-md"
                 type="submit"
               >
                 Buscar
               </button>
-              <Link 
-                className="rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:shadow-md" 
+              <Link
+                className="rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:shadow-md"
                 href="/leaders"
               >
                 Limpiar
@@ -131,7 +162,7 @@ export default async function LeadersPage({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-orange-100">Por llegar</p>
-                <p className="mt-1 text-3xl font-bold">{leadersPending.length}</p>
+                <p className="mt-1 text-3xl font-bold">{totalPending}</p>
               </div>
               <div className="rounded-full bg-white/20 p-3">
                 <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -144,7 +175,7 @@ export default async function LeadersPage({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-green-100">Confirmados</p>
-                <p className="mt-1 text-3xl font-bold">{leadersChecked.length}</p>
+                <p className="mt-1 text-3xl font-bold">{totalChecked}</p>
               </div>
               <div className="rounded-full bg-white/20 p-3">
                 <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -155,7 +186,7 @@ export default async function LeadersPage({
           </div>
         </div>
 
-        {/* Pending Leaders Section */}
+        {/* ── Pending Leaders ── */}
         <section className="rounded-xl bg-white/80 shadow-lg backdrop-blur-sm">
           <div className="border-b border-slate-200 bg-gradient-to-r from-amber-50 to-orange-50 p-5 rounded-t-xl">
             <div className="flex items-center gap-3">
@@ -204,16 +235,16 @@ export default async function LeadersPage({
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-2">
-                          <Link 
-                            className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-200" 
+                          <Link
+                            className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-200"
                             href={`/leaders/${l.id}/edit`}
                           >
                             Editar
                           </Link>
                           <form action={toggleLeaderCheckInAction.bind(null, l.id)}>
-                            <button 
-                              className="rounded-md bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 hover:shadow-md" 
-                              type="submit" 
+                            <button
+                              className="rounded-md bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 hover:shadow-md"
+                              type="submit"
                               title="Marcar que llegó"
                             >
                               ✓
@@ -239,10 +270,23 @@ export default async function LeadersPage({
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination — Pending */}
+            {totalPagesPending > 1 && (
+              <Pagination
+                currentPage={pagePending}
+                totalPages={totalPagesPending}
+                total={totalPending}
+                pageSize={PAGE_SIZE}
+                prevHref={pagePending > 1 ? buildHref({ pagePending: pagePending - 1 }) : null}
+                nextHref={pagePending < totalPagesPending ? buildHref({ pagePending: pagePending + 1 }) : null}
+                buildPageHref={(p) => buildHref({ pagePending: p })}
+              />
+            )}
           </div>
         </section>
 
-        {/* Checked Leaders Section */}
+        {/* ── Checked Leaders ── */}
         <section className="rounded-xl bg-white/80 shadow-lg backdrop-blur-sm">
           <div className="border-b border-slate-200 bg-gradient-to-r from-green-50 to-emerald-50 p-5 rounded-t-xl">
             <div className="flex items-center gap-3">
@@ -300,9 +344,9 @@ export default async function LeadersPage({
                       </td>
                       <td className="px-4 py-3">
                         <form action={toggleLeaderCheckInAction.bind(null, l.id)} className="flex justify-end">
-                          <button 
-                            className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-200" 
-                            type="submit" 
+                          <button
+                            className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-200"
+                            type="submit"
                             title="Desmarcar"
                           >
                             ↩
@@ -327,8 +371,130 @@ export default async function LeadersPage({
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination — Checked */}
+            {totalPagesChecked > 1 && (
+              <Pagination
+                currentPage={pageChecked}
+                totalPages={totalPagesChecked}
+                total={totalChecked}
+                pageSize={PAGE_SIZE}
+                prevHref={pageChecked > 1 ? buildHref({ pageChecked: pageChecked - 1 }) : null}
+                nextHref={pageChecked < totalPagesChecked ? buildHref({ pageChecked: pageChecked + 1 }) : null}
+                buildPageHref={(p) => buildHref({ pageChecked: p })}
+              />
+            )}
           </div>
         </section>
+
+      </div>
+    </div>
+  );
+}
+
+/* ─── Pagination component ─────────────────────────────────────────────── */
+
+function Pagination({
+  currentPage,
+  totalPages,
+  total,
+  pageSize,
+  prevHref,
+  nextHref,
+  buildPageHref
+}: {
+  currentPage: number;
+  totalPages: number;
+  total: number;
+  pageSize: number;
+  prevHref: string | null;
+  nextHref: string | null;
+  buildPageHref: (page: number) => string;
+}) {
+  const from = (currentPage - 1) * pageSize + 1;
+  const to = Math.min(currentPage * pageSize, total);
+
+  // Show at most 5 page buttons, centered around the current page
+  const pages: (number | "…")[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (currentPage > 3) pages.push("…");
+    for (
+      let i = Math.max(2, currentPage - 1);
+      i <= Math.min(totalPages - 1, currentPage + 1);
+      i++
+    ) {
+      pages.push(i);
+    }
+    if (currentPage < totalPages - 2) pages.push("…");
+    pages.push(totalPages);
+  }
+
+  return (
+    <div className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
+      {/* Info */}
+      <p className="text-xs text-slate-500">
+        Mostrando <span className="font-semibold text-slate-700">{from}–{to}</span> de{" "}
+        <span className="font-semibold text-slate-700">{total}</span> líderes
+      </p>
+
+      {/* Controls */}
+      <div className="flex items-center gap-1">
+        {/* Prev */}
+        {prevHref ? (
+          <Link
+            href={prevHref}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+            aria-label="Página anterior"
+          >
+            ‹
+          </Link>
+        ) : (
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-100 bg-slate-50 text-sm text-slate-300 cursor-not-allowed">
+            ‹
+          </span>
+        )}
+
+        {/* Page numbers */}
+        {pages.map((p, i) =>
+          p === "…" ? (
+            <span key={`ellipsis-${i}`} className="inline-flex h-8 w-8 items-center justify-center text-sm text-slate-400">
+              …
+            </span>
+          ) : p === currentPage ? (
+            <span
+              key={p}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-xs font-semibold text-white shadow-sm"
+            >
+              {p}
+            </span>
+          ) : (
+            <Link
+              key={p}
+              href={buildPageHref(p)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+            >
+              {p}
+            </Link>
+          )
+        )}
+
+        {/* Next */}
+        {nextHref ? (
+          <Link
+            href={nextHref}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+            aria-label="Página siguiente"
+          >
+            ›
+          </Link>
+        ) : (
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-100 bg-slate-50 text-sm text-slate-300 cursor-not-allowed">
+            ›
+          </span>
+        )}
       </div>
     </div>
   );

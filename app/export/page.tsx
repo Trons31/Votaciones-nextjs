@@ -2,18 +2,37 @@ import Link from "next/link";
 import { requireAuth } from "@/lib/require-auth";
 import { prisma } from "@/lib/prisma";
 
-export default async function ExportPage() {
+const PAGE_SIZE = 10;
+
+export default async function ExportPage({
+  searchParams
+}: {
+  searchParams: { page?: string };
+}) {
   await requireAuth();
 
-  const leaders = await prisma.leader.findMany({
-    orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }],
-    select: { id: true, nombresLider: true, apellidosLider: true }
-  });
+  const page = Math.max(1, parseInt(searchParams.page || "1", 10));
+
+  const [totalLeaders, leaders] = await Promise.all([
+    prisma.leader.count(),
+    prisma.leader.findMany({
+      orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }],
+      select: { id: true, nombresLider: true, apellidosLider: true },
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE
+    })
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(totalLeaders / PAGE_SIZE));
+
+  function pageHref(p: number) {
+    return `/export?page=${p}`;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50 to-teal-50 p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        {/* Header Section */}
+        {/* Header */}
         <div className="rounded-xl bg-white/80 p-6 shadow-lg backdrop-blur-sm">
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 p-3">
@@ -22,25 +41,17 @@ export default async function ExportPage() {
               </svg>
             </div>
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-                Centro de Exportación
-              </h1>
-              <p className="text-sm text-slate-600">
-                Descarga datos en múltiples formatos
-              </p>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">Centro de Exportación</h1>
+              <p className="text-sm text-slate-600">Descarga datos en múltiples formatos</p>
             </div>
           </div>
-          
-          {/* Info Banner */}
           <div className="mt-4 flex items-start gap-3 rounded-lg bg-blue-50 p-4">
             <svg className="h-5 w-5 flex-shrink-0 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div className="text-sm text-blue-900">
               <p className="font-medium">Información importante</p>
-              <p className="mt-1 text-blue-700">
-                Todas las fechas y horas se formatean en zona horaria de Colombia (America/Bogota)
-              </p>
+              <p className="mt-1 text-blue-700">Todas las fechas y horas se formatean en zona horaria de Colombia (America/Bogota)</p>
             </div>
           </div>
         </div>
@@ -81,7 +92,7 @@ export default async function ExportPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-purple-100">Líderes</p>
-                <p className="mt-1 text-2xl font-bold">{leaders.length}</p>
+                <p className="mt-1 text-2xl font-bold">{totalLeaders}</p>
               </div>
               <div className="rounded-full bg-white/20 p-3">
                 <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -113,7 +124,7 @@ export default async function ExportPage() {
 
             <div className="p-5 space-y-4">
               {/* Todos */}
-              <div className="group rounded-lg border-2 border-slate-200 bg-slate-50 p-4 transition-all hover:border-green-400 hover:bg-green-50">
+              <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-4 transition-all hover:border-green-400 hover:bg-green-50">
                 <div className="mb-3 flex items-center gap-2">
                   <div className="rounded-md bg-green-100 p-1.5">
                     <svg className="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -123,29 +134,19 @@ export default async function ExportPage() {
                   <span className="text-sm font-semibold text-slate-900">Todos los votantes</span>
                 </div>
                 <div className="flex gap-2">
-                  <Link 
-                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-green-700 hover:shadow-md" 
-                    href="/export/all.xlsx"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                  <Link className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-green-700 hover:shadow-md" href="/export/all.xlsx">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                     Excel
                   </Link>
-                  <Link 
-                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-cyan-700 hover:shadow-md" 
-                    href="/export/all.csv"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                  <Link className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-cyan-700 hover:shadow-md" href="/export/all.csv">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                     CSV
                   </Link>
                 </div>
               </div>
 
               {/* Confirmados */}
-              <div className="group rounded-lg border-2 border-slate-200 bg-slate-50 p-4 transition-all hover:border-blue-400 hover:bg-blue-50">
+              <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-4 transition-all hover:border-blue-400 hover:bg-blue-50">
                 <div className="mb-3 flex items-center gap-2">
                   <div className="rounded-md bg-blue-100 p-1.5">
                     <svg className="h-4 w-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -155,29 +156,19 @@ export default async function ExportPage() {
                   <span className="text-sm font-semibold text-slate-900">Votantes confirmados</span>
                 </div>
                 <div className="flex gap-2">
-                  <Link 
-                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-green-700 hover:shadow-md" 
-                    href="/export/confirmed.xlsx"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                  <Link className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-green-700 hover:shadow-md" href="/export/confirmed.xlsx">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                     Excel
                   </Link>
-                  <Link 
-                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-cyan-700 hover:shadow-md" 
-                    href="/export/confirmed.csv"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                  <Link className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-cyan-700 hover:shadow-md" href="/export/confirmed.csv">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                     CSV
                   </Link>
                 </div>
               </div>
 
               {/* Pendientes */}
-              <div className="group rounded-lg border-2 border-slate-200 bg-slate-50 p-4 transition-all hover:border-amber-400 hover:bg-amber-50">
+              <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-4 transition-all hover:border-amber-400 hover:bg-amber-50">
                 <div className="mb-3 flex items-center gap-2">
                   <div className="rounded-md bg-amber-100 p-1.5">
                     <svg className="h-4 w-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -187,30 +178,18 @@ export default async function ExportPage() {
                   <span className="text-sm font-semibold text-slate-900">Votantes pendientes</span>
                 </div>
                 <div className="flex gap-2">
-                  <Link 
-                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-green-700 hover:shadow-md" 
-                    href="/export/pending.xlsx"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                  <Link className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-green-700 hover:shadow-md" href="/export/pending.xlsx">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                     Excel
                   </Link>
-                  <Link 
-                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-cyan-700 hover:shadow-md" 
-                    href="/export/pending.csv"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                  <Link className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-cyan-700 hover:shadow-md" href="/export/pending.csv">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                     CSV
                   </Link>
                 </div>
               </div>
             </div>
           </div>
-
-          
 
           {/* Reportes y Filtrados */}
           <div className="rounded-xl bg-white/80 shadow-lg backdrop-blur-sm">
@@ -229,8 +208,7 @@ export default async function ExportPage() {
             </div>
 
             <div className="p-5 space-y-4">
-              {/* Reporte General */}
-              <div className="group rounded-lg border-2 border-slate-200 bg-slate-50 p-4 transition-all hover:border-orange-400 hover:bg-orange-50">
+              <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-4 transition-all hover:border-orange-400 hover:bg-orange-50">
                 <div className="mb-3 flex items-center gap-2">
                   <div className="rounded-md bg-orange-100 p-1.5">
                     <svg className="h-4 w-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -240,29 +218,17 @@ export default async function ExportPage() {
                   <span className="text-sm font-semibold text-slate-900">Reporte general completo</span>
                 </div>
                 <div className="flex gap-2">
-                  <Link 
-                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-green-700 hover:shadow-md" 
-                    href="/reporte/export.xlsx"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                  <Link className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-green-700 hover:shadow-md" href="/reporte/export.xlsx">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                     Excel
                   </Link>
-                  <Link 
-                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-cyan-700 hover:shadow-md" 
-                    href="/reporte/export.csv"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                  <Link className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-cyan-700 hover:shadow-md" href="/reporte/export.csv">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                     CSV
                   </Link>
                 </div>
               </div>
 
-
-              {/* Info adicional */}
               <div className="rounded-lg bg-slate-100 p-4">
                 <div className="flex items-start gap-3">
                   <svg className="h-5 w-5 flex-shrink-0 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -270,9 +236,7 @@ export default async function ExportPage() {
                   </svg>
                   <div className="text-xs text-slate-600">
                     <p className="font-medium text-slate-700">Tip</p>
-                    <p className="mt-1">
-                      Los archivos Excel incluyen formato y estilos. Los CSV son compatibles con cualquier software de hojas de cálculo.
-                    </p>
+                    <p className="mt-1">Los archivos Excel incluyen formato y estilos. Los CSV son compatibles con cualquier software de hojas de cálculo.</p>
                   </div>
                 </div>
               </div>
@@ -296,13 +260,10 @@ export default async function ExportPage() {
                     <p className="text-xs text-slate-600">Descarga los votantes asignados a cada líder</p>
                   </div>
                 </div>
-                {leaders.length > 12 && (
-                  <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700">
-                    Mostrando 12 de {leaders.length}
-                  </span>
-                )}
+                <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700">
+                  {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalLeaders)} de {totalLeaders}
+                </span>
               </div>
-              {/* Badge informativo */}
               <div className="flex items-center gap-2 rounded-lg bg-violet-100 px-3 py-2">
                 <svg className="h-4 w-4 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -316,10 +277,10 @@ export default async function ExportPage() {
 
           <div className="p-5">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {leaders.slice(0, 12).map((l) => (
+              {leaders.map((l) => (
                 <div key={l.id} className="group rounded-lg border-2 border-slate-200 bg-slate-50 p-4 transition-all hover:border-violet-400 hover:bg-violet-50">
-                  <Link 
-                    className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900 hover:text-violet-600" 
+                  <Link
+                    className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900 hover:text-violet-600"
                     href={`/leaders/${l.id}`}
                   >
                     <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -329,8 +290,8 @@ export default async function ExportPage() {
                   </Link>
                   <p className="mb-3 text-xs text-slate-500">Exportar sus votantes</p>
                   <div className="flex gap-2">
-                    <Link 
-                      className="flex-1 inline-flex items-center justify-center gap-1 rounded-md bg-green-600 px-3 py-2 text-xs font-semibold text-white transition-all hover:bg-green-700" 
+                    <Link
+                      className="flex-1 inline-flex items-center justify-center gap-1 rounded-md bg-green-600 px-3 py-2 text-xs font-semibold text-white transition-all hover:bg-green-700"
                       href={`/export/leader/${l.id}?format=xlsx`}
                     >
                       <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -338,8 +299,8 @@ export default async function ExportPage() {
                       </svg>
                       Excel
                     </Link>
-                    <Link 
-                      className="flex-1 inline-flex items-center justify-center gap-1 rounded-md bg-cyan-600 px-3 py-2 text-xs font-semibold text-white transition-all hover:bg-cyan-700" 
+                    <Link
+                      className="flex-1 inline-flex items-center justify-center gap-1 rounded-md bg-cyan-600 px-3 py-2 text-xs font-semibold text-white transition-all hover:bg-cyan-700"
                       href={`/export/leader/${l.id}?format=csv`}
                     >
                       <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -352,21 +313,67 @@ export default async function ExportPage() {
               ))}
             </div>
 
-            {leaders.length > 12 && (
-              <div className="mt-4 rounded-lg bg-violet-50 p-4">
-                <div className="flex items-start gap-3">
-                  <svg className="h-5 w-5 flex-shrink-0 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div className="text-sm">
-                    <p className="font-medium text-violet-900">Más líderes disponibles</p>
-                    <p className="mt-1 text-xs text-violet-700">
-                      Para exportar datos de otros líderes, accede al perfil del líder desde la sección de{" "}
-                      <Link href="/leaders" className="font-semibold underline">
-                        Líderes
-                      </Link>
-                    </p>
-                  </div>
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="mt-6 flex flex-col items-center justify-between gap-3 sm:flex-row">
+                <p className="text-xs text-slate-500">
+                  Mostrando{" "}
+                  <span className="font-semibold text-slate-700">
+                    {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalLeaders)}
+                  </span>{" "}
+                  de <span className="font-semibold text-slate-700">{totalLeaders}</span> líderes
+                </p>
+
+                <div className="flex items-center gap-1">
+                  {page > 1 ? (
+                    <Link
+                      href={pageHref(page - 1)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+                      aria-label="Página anterior"
+                    >
+                      ‹
+                    </Link>
+                  ) : (
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-100 bg-slate-50 text-sm text-slate-300 cursor-not-allowed">
+                      ‹
+                    </span>
+                  )}
+
+                  {(() => {
+                    const pages: (number | "…")[] = [];
+                    if (totalPages <= 7) {
+                      for (let i = 1; i <= totalPages; i++) pages.push(i);
+                    } else {
+                      pages.push(1);
+                      if (page > 3) pages.push("…");
+                      for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i);
+                      if (page < totalPages - 2) pages.push("…");
+                      pages.push(totalPages);
+                    }
+                    return pages.map((p, i) =>
+                      p === "…" ? (
+                        <span key={`e-${i}`} className="inline-flex h-8 w-8 items-center justify-center text-sm text-slate-400">…</span>
+                      ) : p === page ? (
+                        <span key={p} className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-violet-600 text-xs font-semibold text-white shadow-sm">{p}</span>
+                      ) : (
+                        <Link key={p} href={pageHref(p)} className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm">{p}</Link>
+                      )
+                    );
+                  })()}
+
+                  {page < totalPages ? (
+                    <Link
+                      href={pageHref(page + 1)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+                      aria-label="Página siguiente"
+                    >
+                      ›
+                    </Link>
+                  ) : (
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-100 bg-slate-50 text-sm text-slate-300 cursor-not-allowed">
+                      ›
+                    </span>
+                  )}
                 </div>
               </div>
             )}

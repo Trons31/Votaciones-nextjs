@@ -6,6 +6,8 @@ import { FlashMessage } from "@/components/FlashMessage";
 import { toggleVoterCheckInAction } from "@/app/actions/voters";
 import { formatDateTimeCO } from "@/lib/time";
 
+const PAGE_SIZE = 10;
+
 function parseLeaderFilter(v: string | undefined): { kind: "all" } | { kind: "none" } | { kind: "id"; id: number } {
   const s = (v || "all").trim();
   if (s === "" || s === "all") return { kind: "all" };
@@ -18,7 +20,16 @@ function parseLeaderFilter(v: string | undefined): { kind: "all" } | { kind: "no
 export default async function VotersPage({
   searchParams
 }: {
-  searchParams: { q?: string; leader?: string; colegio?: string; mesa?: string; flash?: string; tone?: string };
+  searchParams: {
+    q?: string;
+    leader?: string;
+    colegio?: string;
+    mesa?: string;
+    flash?: string;
+    tone?: string;
+    pagePending?: string;
+    pageChecked?: string;
+  };
 }) {
   await requireAuth();
 
@@ -27,6 +38,9 @@ export default async function VotersPage({
   const leaderFilter = parseLeaderFilter(searchParams.leader);
   const colegio = (searchParams.colegio || "").trim();
   const mesa = (searchParams.mesa || "").trim();
+
+  const pagePending = Math.max(1, parseInt(searchParams.pagePending || "1", 10));
+  const pageChecked = Math.max(1, parseInt(searchParams.pageChecked || "1", 10));
 
   const leaderWhere =
     leaderFilter.kind === "none"
@@ -49,7 +63,11 @@ export default async function VotersPage({
             { mesaVotacionNorm: { contains: qNorm } },
             {
               leader: {
-                OR: [{ nombresNorm: { contains: qNorm } }, { apellidosNorm: { contains: qNorm } }, { cedulaNorm: { contains: qNorm } }]
+                OR: [
+                  { nombresNorm: { contains: qNorm } },
+                  { apellidosNorm: { contains: qNorm } },
+                  { cedulaNorm: { contains: qNorm } }
+                ]
               }
             }
           ]
@@ -57,8 +75,22 @@ export default async function VotersPage({
       : {})
   };
 
-  const [leaders, colegiosRows, votersPending, votersChecked] = await Promise.all([
-    prisma.leader.findMany({ orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }], select: { id: true, nombresLider: true, apellidosLider: true } }),
+  const include = {
+    leader: { select: { id: true, nombresLider: true, apellidosLider: true } }
+  };
+
+  const [
+    leaders,
+    colegiosRows,
+    votersPending,
+    votersChecked,
+    totalPending,
+    totalChecked
+  ] = await Promise.all([
+    prisma.leader.findMany({
+      orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }],
+      select: { id: true, nombresLider: true, apellidosLider: true }
+    }),
     prisma.voter.findMany({
       where: { dondeVota: { not: null }, NOT: { dondeVota: "" } },
       distinct: ["dondeVota"],
@@ -67,17 +99,26 @@ export default async function VotersPage({
     }),
     prisma.voter.findMany({
       where: { ...whereBase, checkedIn: false },
-      include: { leader: { select: { id: true, nombresLider: true, apellidosLider: true } } },
-      orderBy: [{ apellidos: "asc" }, { nombres: "asc" }]
+      include,
+      orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
+      skip: (pagePending - 1) * PAGE_SIZE,
+      take: PAGE_SIZE
     }),
     prisma.voter.findMany({
       where: { ...whereBase, checkedIn: true },
-      include: { leader: { select: { id: true, nombresLider: true, apellidosLider: true } } },
-      orderBy: [{ checkedInAt: "desc" }]
-    })
+      include,
+      orderBy: [{ checkedInAt: "desc" }],
+      skip: (pageChecked - 1) * PAGE_SIZE,
+      take: PAGE_SIZE
+    }),
+    prisma.voter.count({ where: { ...whereBase, checkedIn: false } }),
+    prisma.voter.count({ where: { ...whereBase, checkedIn: true } })
   ]);
 
   const colegios = colegiosRows.map((r) => r.dondeVota!).filter(Boolean);
+
+  const totalPagesPending = Math.max(1, Math.ceil(totalPending / PAGE_SIZE));
+  const totalPagesChecked = Math.max(1, Math.ceil(totalChecked / PAGE_SIZE));
 
   const flash = searchParams.flash ? decodeURIComponent(searchParams.flash) : "";
   const tone =
@@ -88,10 +129,26 @@ export default async function VotersPage({
   const currentLeaderValue =
     leaderFilter.kind === "all" ? "all" : leaderFilter.kind === "none" ? "none" : String(leaderFilter.id);
 
+  /** Builds a URL preserving all active filters and overriding specific params */
+  function buildHref(overrides: Record<string, string | number>) {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (currentLeaderValue !== "all") params.set("leader", currentLeaderValue);
+    if (colegio) params.set("colegio", colegio);
+    if (mesa) params.set("mesa", mesa);
+    params.set("pagePending", String(pagePending));
+    params.set("pageChecked", String(pageChecked));
+    for (const [k, v] of Object.entries(overrides)) {
+      params.set(k, String(v));
+    }
+    return `/voters?${params.toString()}`;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-purple-50 to-pink-50 p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        {/* Header Section */}
+
+        {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-white/80 p-6 shadow-lg backdrop-blur-sm">
           <div className="space-y-1">
             <h1 className="text-3xl font-bold tracking-tight text-slate-900">
@@ -101,8 +158,8 @@ export default async function VotersPage({
               Controla la asistencia de votantes en tiempo real
             </p>
           </div>
-          <Link 
-            href="/voters/new" 
+          <Link
+            href="/voters/new"
             className="group inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg hover:scale-105"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -112,7 +169,7 @@ export default async function VotersPage({
           </Link>
         </div>
 
-        {/* Flash Message */}
+        {/* Flash */}
         {flash && (
           <div className="animate-fade-in">
             <FlashMessage message={flash} tone={tone} />
@@ -125,7 +182,7 @@ export default async function VotersPage({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-orange-100">Por confirmar</p>
-                <p className="mt-1 text-3xl font-bold">{votersPending.length}</p>
+                <p className="mt-1 text-3xl font-bold">{totalPending}</p>
               </div>
               <div className="rounded-full bg-white/20 p-3">
                 <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -138,7 +195,7 @@ export default async function VotersPage({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-green-100">Confirmados</p>
-                <p className="mt-1 text-3xl font-bold">{votersChecked.length}</p>
+                <p className="mt-1 text-3xl font-bold">{totalChecked}</p>
               </div>
               <div className="rounded-full bg-white/20 p-3">
                 <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -149,19 +206,16 @@ export default async function VotersPage({
           </div>
         </div>
 
-        {/* Search and Filter Section */}
-        <form 
-          className="rounded-xl bg-white/80 p-5 shadow-lg backdrop-blur-sm transition-all hover:shadow-xl" 
+        {/* Search & Filters */}
+        <form
+          className="rounded-xl bg-white/80 p-5 shadow-lg backdrop-blur-sm transition-all hover:shadow-xl"
           method="get"
         >
           <div className="space-y-4">
-            {/* First Row - Main Search */}
             <div className="relative">
-              <svg 
-                className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
+              <svg
+                className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
+                fill="none" stroke="currentColor" viewBox="0 0 24 24"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
@@ -173,13 +227,12 @@ export default async function VotersPage({
               />
             </div>
 
-            {/* Second Row - Filters */}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-slate-600">Líder</label>
-                <select 
-                  name="leader" 
-                  defaultValue={currentLeaderValue} 
+                <select
+                  name="leader"
+                  defaultValue={currentLeaderValue}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
                 >
                   <option value="all">Todos (con o sin líder)</option>
@@ -194,16 +247,14 @@ export default async function VotersPage({
 
               <div className="space-y-1">
                 <label className="text-xs font-medium text-slate-600">Colegio</label>
-                <select 
-                  name="colegio" 
-                  defaultValue={colegio} 
+                <select
+                  name="colegio"
+                  defaultValue={colegio}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
                 >
                   <option value="">Todos los colegios</option>
                   {colegios.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
+                    <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
               </div>
@@ -219,8 +270,8 @@ export default async function VotersPage({
               </div>
 
               <div className="flex items-end gap-2">
-                <button 
-                  className="flex-1 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-slate-800 hover:shadow-md" 
+                <button
+                  className="flex-1 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-slate-800 hover:shadow-md"
                   type="submit"
                 >
                   Filtrar
@@ -228,10 +279,9 @@ export default async function VotersPage({
               </div>
             </div>
 
-            {/* Third Row - Action Buttons */}
             <div className="flex flex-wrap gap-2">
-              <Link 
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:shadow-md" 
+              <Link
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:shadow-md"
                 href="/voters"
               >
                 Limpiar filtros
@@ -251,7 +301,7 @@ export default async function VotersPage({
           </div>
         </form>
 
-        {/* Pending Voters Section */}
+        {/* ── Pending Voters ── */}
         <section className="rounded-xl bg-white/80 shadow-lg backdrop-blur-sm">
           <div className="border-b border-slate-200 bg-gradient-to-r from-amber-50 to-orange-50 p-5 rounded-t-xl">
             <div className="flex items-center gap-3">
@@ -297,14 +347,12 @@ export default async function VotersPage({
                           <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
                             Mesa {v.mesaVotacion}
                           </span>
-                        ) : (
-                          "—"
-                        )}
+                        ) : "—"}
                       </td>
                       <td className="px-4 py-3">
                         {v.leader ? (
-                          <Link 
-                            className="inline-flex items-center gap-1 font-medium text-purple-600 hover:text-purple-700 hover:underline" 
+                          <Link
+                            className="inline-flex items-center gap-1 font-medium text-purple-600 hover:text-purple-700 hover:underline"
                             href={`/leaders/${v.leader.id}`}
                           >
                             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -323,16 +371,16 @@ export default async function VotersPage({
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-2">
-                          <Link 
-                            className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-200" 
+                          <Link
+                            className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-200"
                             href={`/voters/${v.id}/edit`}
                           >
                             Editar
                           </Link>
                           <form action={toggleVoterCheckInAction.bind(null, v.id)}>
-                            <button 
-                              className="rounded-md bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 hover:shadow-md" 
-                              type="submit" 
+                            <button
+                              className="rounded-md bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 hover:shadow-md"
+                              type="submit"
                               title="Confirmar"
                             >
                               ✓
@@ -360,10 +408,23 @@ export default async function VotersPage({
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination — Pending */}
+            {totalPagesPending > 1 && (
+              <Pagination
+                currentPage={pagePending}
+                totalPages={totalPagesPending}
+                total={totalPending}
+                pageSize={PAGE_SIZE}
+                prevHref={pagePending > 1 ? buildHref({ pagePending: pagePending - 1 }) : null}
+                nextHref={pagePending < totalPagesPending ? buildHref({ pagePending: pagePending + 1 }) : null}
+                buildPageHref={(p) => buildHref({ pagePending: p })}
+              />
+            )}
           </div>
         </section>
 
-        {/* Checked Voters Section */}
+        {/* ── Checked Voters ── */}
         <section className="rounded-xl bg-white/80 shadow-lg backdrop-blur-sm">
           <div className="border-b border-slate-200 bg-gradient-to-r from-green-50 to-emerald-50 p-5 rounded-t-xl">
             <div className="flex items-center gap-3">
@@ -410,14 +471,12 @@ export default async function VotersPage({
                           <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-700">
                             Mesa {v.mesaVotacion}
                           </span>
-                        ) : (
-                          "—"
-                        )}
+                        ) : "—"}
                       </td>
                       <td className="px-4 py-3">
                         {v.leader ? (
-                          <Link 
-                            className="inline-flex items-center gap-1 font-medium text-purple-600 hover:text-purple-700 hover:underline" 
+                          <Link
+                            className="inline-flex items-center gap-1 font-medium text-purple-600 hover:text-purple-700 hover:underline"
                             href={`/leaders/${v.leader.id}`}
                           >
                             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -444,9 +503,9 @@ export default async function VotersPage({
                       </td>
                       <td className="px-4 py-3">
                         <form action={toggleVoterCheckInAction.bind(null, v.id)} className="flex justify-end">
-                          <button 
-                            className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-200" 
-                            type="submit" 
+                          <button
+                            className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-200"
+                            type="submit"
                             title="Desmarcar"
                           >
                             ↩
@@ -471,8 +530,124 @@ export default async function VotersPage({
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination — Checked */}
+            {totalPagesChecked > 1 && (
+              <Pagination
+                currentPage={pageChecked}
+                totalPages={totalPagesChecked}
+                total={totalChecked}
+                pageSize={PAGE_SIZE}
+                prevHref={pageChecked > 1 ? buildHref({ pageChecked: pageChecked - 1 }) : null}
+                nextHref={pageChecked < totalPagesChecked ? buildHref({ pageChecked: pageChecked + 1 }) : null}
+                buildPageHref={(p) => buildHref({ pageChecked: p })}
+              />
+            )}
           </div>
         </section>
+
+      </div>
+    </div>
+  );
+}
+
+/* ─── Pagination component ─────────────────────────────────────────────── */
+
+function Pagination({
+  currentPage,
+  totalPages,
+  total,
+  pageSize,
+  prevHref,
+  nextHref,
+  buildPageHref
+}: {
+  currentPage: number;
+  totalPages: number;
+  total: number;
+  pageSize: number;
+  prevHref: string | null;
+  nextHref: string | null;
+  buildPageHref: (page: number) => string;
+}) {
+  const from = (currentPage - 1) * pageSize + 1;
+  const to = Math.min(currentPage * pageSize, total);
+
+  const pages: (number | "…")[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (currentPage > 3) pages.push("…");
+    for (
+      let i = Math.max(2, currentPage - 1);
+      i <= Math.min(totalPages - 1, currentPage + 1);
+      i++
+    ) {
+      pages.push(i);
+    }
+    if (currentPage < totalPages - 2) pages.push("…");
+    pages.push(totalPages);
+  }
+
+  return (
+    <div className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
+      <p className="text-xs text-slate-500">
+        Mostrando <span className="font-semibold text-slate-700">{from}–{to}</span> de{" "}
+        <span className="font-semibold text-slate-700">{total}</span> votantes
+      </p>
+
+      <div className="flex items-center gap-1">
+        {prevHref ? (
+          <Link
+            href={prevHref}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+            aria-label="Página anterior"
+          >
+            ‹
+          </Link>
+        ) : (
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-100 bg-slate-50 text-sm text-slate-300 cursor-not-allowed">
+            ‹
+          </span>
+        )}
+
+        {pages.map((p, i) =>
+          p === "…" ? (
+            <span key={`ellipsis-${i}`} className="inline-flex h-8 w-8 items-center justify-center text-sm text-slate-400">
+              …
+            </span>
+          ) : p === currentPage ? (
+            <span
+              key={p}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-purple-600 text-xs font-semibold text-white shadow-sm"
+            >
+              {p}
+            </span>
+          ) : (
+            <Link
+              key={p}
+              href={buildPageHref(p)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+            >
+              {p}
+            </Link>
+          )
+        )}
+
+        {nextHref ? (
+          <Link
+            href={nextHref}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm"
+            aria-label="Página siguiente"
+          >
+            ›
+          </Link>
+        ) : (
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-100 bg-slate-50 text-sm text-slate-300 cursor-not-allowed">
+            ›
+          </span>
+        )}
       </div>
     </div>
   );
