@@ -1,3 +1,5 @@
+import { normalizeText } from "@/lib/normalize";
+
 // Lista de colegios (copiada del template original voter_form.html)
 export const COLEGIOS = [
   "COLEGIO SAN FRANCISCO DE ASIS",
@@ -44,3 +46,18 @@ export const COLEGIOS = [
   "RAICERO",
   "SAN QUIRRE"
 ];
+
+export function mergeColegios(extraColegios: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+
+  return [...COLEGIOS, ...extraColegios]
+    .map((colegio) => colegio?.trim() || "")
+    .filter(Boolean)
+    .filter((colegio) => {
+      const key = normalizeText(colegio);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => a.localeCompare(b, "es"));
+}

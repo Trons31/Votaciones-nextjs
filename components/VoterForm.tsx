@@ -3,7 +3,6 @@
 import { useFormState, useFormStatus } from "react-dom";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
-import { COLEGIOS } from "@/lib/colegios";
 
 type LeaderOption = { id: number; nombresLider: string; apellidosLider: string };
 
@@ -226,6 +225,7 @@ export function VoterForm({
   title,
   initialValues,
   leaders,
+  colegios,
   action,
   cancelHref,
   canChooseOrigen = false
@@ -233,6 +233,7 @@ export function VoterForm({
   title: string;
   initialValues: VoterValues;
   leaders: LeaderOption[];
+  colegios: string[];
   action: (prevState: FormState, formData: FormData) => Promise<FormState>;
   cancelHref: string;
   canChooseOrigen?: boolean;
@@ -285,7 +286,7 @@ export function VoterForm({
               placeholder="Escribe para buscar"
             />
             <datalist id="colegios">
-              {COLEGIOS.map((c) => (
+              {colegios.map((c) => (
                 <option key={c} value={c} />
               ))}
             </datalist>

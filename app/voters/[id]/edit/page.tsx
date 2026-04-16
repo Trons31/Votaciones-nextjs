@@ -5,6 +5,7 @@ import { updateVoterAction, deleteVoterAction } from "@/app/actions/voters";
 import { notFound } from "next/navigation";
 import { FlashMessage } from "@/components/FlashMessage";
 import { formatDateTimeCO } from "@/lib/time";
+import { mergeColegios } from "@/lib/colegios";
 
 export default async function EditVoterPage({
   params,
@@ -24,10 +25,20 @@ export default async function EditVoterPage({
   });
   if (!voter) notFound();
 
-  const leaders = await prisma.leader.findMany({
-    orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }],
-    select: { id: true, nombresLider: true, apellidosLider: true }
-  });
+  const [leaders, colegiosRows] = await Promise.all([
+    prisma.leader.findMany({
+      orderBy: [{ apellidosLider: "asc" }, { nombresLider: "asc" }],
+      select: { id: true, nombresLider: true, apellidosLider: true }
+    }),
+    prisma.voter.findMany({
+      where: { dondeVota: { not: null }, NOT: { dondeVota: "" } },
+      distinct: ["dondeVota"],
+      select: { dondeVota: true },
+      orderBy: { dondeVota: "asc" }
+    })
+  ]);
+
+  const colegios = mergeColegios(colegiosRows.map((row) => row.dondeVota));
 
   const flash = searchParams.flash ? decodeURIComponent(searchParams.flash) : "";
   const tone =
@@ -50,6 +61,7 @@ export default async function EditVoterPage({
           leaderId: voter.leaderId ? String(voter.leaderId) : "none"
         }}
         leaders={leaders}
+        colegios={colegios}
         action={updateVoterAction.bind(null, id)}
         cancelHref="/voters"
       />

@@ -16,18 +16,22 @@ const LeaderSchema = z.object({
   notas: z.string().trim().optional().or(z.literal(""))
 });
 
+function buildDuplicateLeaderMessage(leader: { nombresLider: string; apellidosLider: string }) {
+  const leaderName = `${leader.nombresLider} ${leader.apellidosLider}`.trim();
+  return `Este líder ya está registrado: ${leaderName}.`;
+}
+
 function resolveOrigen(
   userRole: string,
   origenRaw: string
 ):
   | { ok: true; origen: "nuevo" | "precargado" }
   | { ok: false; error: string } {
-  // Colaborador SIEMPRE queda como "nuevo"
   if (userRole !== "ADMIN") return { ok: true, origen: "nuevo" };
 
-  const v = (origenRaw || "").trim();
-  if (v === "" || v === "nuevo") return { ok: true, origen: "nuevo" };
-  if (v === "precargado") return { ok: true, origen: "precargado" };
+  const value = (origenRaw || "").trim();
+  if (value === "" || value === "nuevo") return { ok: true, origen: "nuevo" };
+  if (value === "precargado") return { ok: true, origen: "precargado" };
 
   return { ok: false, error: "Origen inválido." };
 }
@@ -63,9 +67,9 @@ export async function createLeaderAction(
   if (ced) {
     const existing = await prisma.leader.findFirst({
       where: { cedulaLider: ced },
-      select: { id: true }
+      select: { id: true, nombresLider: true, apellidosLider: true }
     });
-    if (existing) return { error: "Ya existe un líder con esa cédula." };
+    if (existing) return { error: buildDuplicateLeaderMessage(existing) };
   }
 
   await prisma.leader.create({
@@ -112,9 +116,9 @@ export async function updateLeaderAction(
   if (ced) {
     const existing = await prisma.leader.findFirst({
       where: { cedulaLider: ced, NOT: { id: leaderId } },
-      select: { id: true }
+      select: { id: true, nombresLider: true, apellidosLider: true }
     });
-    if (existing) return { error: "Ya existe otro líder con esa cédula." };
+    if (existing) return { error: buildDuplicateLeaderMessage(existing) };
   }
 
   await prisma.leader.update({
@@ -161,7 +165,6 @@ export async function toggleLeaderCheckInAction(leaderId: number) {
   const now = new Date();
 
   if (leader.checkedIn) {
-    // cerrar último check abierto
     const last = await prisma.leaderCheckIn.findFirst({
       where: { leaderId, checkedOutAt: null },
       orderBy: { checkedInAt: "desc" },
